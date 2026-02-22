@@ -374,51 +374,24 @@ guide_html = """
 
   <div class="guide-item">
     <strong>검색 팁:</strong> 아래 3가지 요소를 포함하면 정확도가 높아집니다.<br />
+    <br />
 
-    <div class="guide-table" style="border:1px solid rgba(120,120,120,0.25); border-radius:8px; overflow:hidden;">
-      <div class="guide-row" style="display:flex; border-bottom:1px solid rgba(120,120,120,0.25);">
-        <div class="guide-cell guide-cell-label" style="width:70px; padding:10px; font-weight:700;">
-          ① 연도
-        </div>
-        <div class="guide-cell guide-cell-body" style="flex:1; padding:10px;">
-          2020~2024 중 선택 <span style="opacity:0.75;">(미입력 시 2023~2024 적용)</span><br />
-          <span style="opacity:0.9;">
-            💡 “최근 N년”은 기준연도 계산 후 2020~2024 밖 연도는 제외되어 범위가 좁아질 수 있어 숫자 연도 권장
-          </span>
-        </div>
-      </div>
+    <strong>① 연도</strong><br />
+    - 2020~2024 중 선택 <span style="opacity:0.75;">(미입력 시 2023~2024 적용)</span><br />
+    - <span style="opacity:0.9;">💡 “최근 N년”은 기준연도 계산 후 2020~2024 밖 연도는 제외되어 범위가 좁아질 수 있어 숫자 연도 권장</span><br />
+    <br />
 
-      <div class="guide-row" style="display:flex; border-bottom:1px solid rgba(120,120,120,0.25);">
-        <div class="guide-cell guide-cell-label" style="width:70px; padding:10px; font-weight:700;">
-          ② 대상
-        </div>
-        <div class="guide-cell guide-cell-body" style="flex:1; padding:10px;">
-          유아동(만3~9, 보호자응답) / 청소년(10~19) / 성인(20~59) / 60대(60~69, 고령층·시니어)<br />
-          <span style="opacity:0.75;">※ 70대 이상은 조사 대상 아님</span>
-        </div>
-      </div>
+    <strong>② 대상</strong><br />
+    - 유아동(만3~9, 보호자응답) / 청소년(10~19) / 성인(20~59) / 60대(60~69, 고령층·시니어)<br />
+    - <span style="opacity:0.75;">※ 70대 이상은 조사 대상 아님</span><br />
+    <br />
 
-      <div class="guide-row" style="display:flex; border-bottom:1px solid rgba(120,120,120,0.25);">
-        <div class="guide-cell guide-cell-label" style="width:70px; padding:10px; font-weight:700;">
-          ③ 지표
-        </div>
-        <div class="guide-cell guide-cell-body" style="flex:1; padding:10px;">
-          <span style="opacity:0.9;">- 콘텐츠 이용률(%)</span>
-          vs
-          <span style="opacity:0.9;">콘텐츠 이용정도(빈도/점수)</span>
-          구분해서 입력
-        </div>
-      </div>
+    <strong>③ 지표</strong><br />
+    - <span style="opacity:0.9;">콘텐츠 이용률(%)</span> vs <span style="opacity:0.9;">콘텐츠 이용정도(빈도/점수)</span> 구분해서 입력<br />
+    <br />
 
-      <div class="guide-row" style="display:flex;">
-        <div class="guide-cell guide-cell-label" style="width:70px; padding:10px; font-weight:700;">
-          (선택)
-        </div>
-        <div class="guide-cell guide-cell-body" style="flex:1; padding:10px;">
-          교차조건(성별/대상 등)이나 주제 키워드(숏폼/콘텐츠명/지표명/예방교육 등)를 추가하면 더 정확해집니다.
-        </div>
-      </div>
-    </div>
+    <strong>(선택)</strong><br />
+    - 교차조건(성별/대상 등)이나 주제 키워드(숏폼/콘텐츠명/지표명/예방교육 등)를 추가하면 더 정확해집니다.<br />
   </div>
 
   <div class="guide-item">
@@ -631,6 +604,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
