@@ -1530,6 +1530,7 @@ True 또는 False만 출력
 
             state['draft_answer'] = answer
             state['final_answer'] = answer
+            state['formatted_answer'] = answer
 
             state['debug_info']['respond_meta'] = {
                 "used_chain": "meta_chain",
@@ -2489,4 +2490,5 @@ def build_graph(node_functions):
     workflow.add_edge("generate_retry", "generate")
 
     memory = MemorySaver()
+
     return workflow.compile(checkpointer=memory)
