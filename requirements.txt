@@ -1,13 +1,26 @@
-streamlit==1.54.0
+# Streamlit
+streamlit>=1.28.0
 
-huggingface-hub==1.4.1
+# LangChain Core
+langchain>=0.2.0
+langchain-core>=0.2.0
+langchain-openai>=0.1.0
+langchain-chroma>=0.1.0
 
-langchain-core==1.2.14
-langchain-openai==1.1.10
-langchain-chroma==1.1.0
-langgraph==1.0.9
+# LangGraph
+langgraph>=0.2.0
 
-chromadb==1.5.1
+# Vector Store
+chromadb>=0.4.0
 
-openai==2.21.0
-tiktoken==0.12.0
+# OpenAI
+openai>=1.0.0
+
+# Hugging Face (DB 다운로드용)
+huggingface_hub>=0.20.0
+
+# 데이터 처리
+pandas>=2.0.0
+
+# 기타 유틸리티
+python-dotenv>=1.0.0
