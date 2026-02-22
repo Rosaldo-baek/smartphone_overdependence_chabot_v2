@@ -18,7 +18,7 @@ from langchain_chroma import Chroma
 
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
-rom huggingface_hub import snapshot_download
+from huggingface_hub import snapshot_download
 
 logger = logging.getLogger(__name__)
 
@@ -3077,3 +3077,4 @@ if __name__ == "__main__":
             import traceback
             traceback.print_exc()
             continue
+
