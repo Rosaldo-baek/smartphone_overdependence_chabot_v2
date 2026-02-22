@@ -23,6 +23,25 @@ from huggingface_hub import snapshot_download
 logger = logging.getLogger(__name__)
 
 RAG_DICT_PATH = r'rag_retrieval_dictionary.json'
+LOCAL_DB_PATH = "./chroma_db_store"
+
+##-------라우팅 별 llm 설정 
+router_llm = ChatOpenAI(model='gpt-5-mini', temperature=0)
+#채팅 참조 판정용 
+chat_refer_llm = ChatOpenAI(model='gpt-5-mini', temperature=0)
+#연도 파싱용
+parse_year_llm = ChatOpenAI(model='gpt-5-mini', temperature=0)
+#후속질문 리라이트용 
+followup_llm = ChatOpenAI(model='gpt-5-mini', temperature=0.2)
+#일반대화/메타/일반조언용 
+casual_llm = ChatOpenAI(model='gpt-5-mini', temperature=0.5, max_tokens=500)
+#RAG 답변 생성용 
+main_llm = ChatOpenAI(model='gpt-5', temperature=0.2)
+#--- 쿼리 리라이트용 
+rewrite_llm = ChatOpenAI(model='gpt-5-mini', temperature=0)
+#답변 검증용 
+validator_llm = ChatOpenAI(model='gpt-5', temperature=0)
+
 
 try:
     with open(RAG_DICT_PATH, "r", encoding="utf-8") as f:
@@ -395,6 +414,18 @@ def download_hf_chroma_repo(repo_id: str, local_dir: str) -> str:
     return path
 
 # 실제 다운로드 실행해서 persist_dir(로컬 폴더 경로) 확보함
+HF_REPO_ID = "Rosaldowithbaek/smartphoe_overdependence_survey_chromadb"
+
+def download_hf_chroma_repo(repo_id: str, local_dir: str) -> str:
+    path = snapshot_download(
+            repo_id=repo_id,                 # 내려받을 리포 ID
+            repo_type="dataset",             # dataset 리포라고 가정
+            local_dir=local_dir,             # 로컬 저장 위치
+            local_dir_use_symlinks=False,    # 심링크 대신 실제 파일로 저장(호환성 좋음)
+        )
+    return path
+
+# 실제 다운로드 실행해서 persist_dir(로컬 폴더 경로) 확보함
 persist_dir = download_hf_chroma_repo(HF_REPO_ID, LOCAL_DB_PATH)
 
 COLLECTION_NAME = "pdf_pages_with_summary_v2"
@@ -445,29 +476,7 @@ def init_resources(
             collection_name=COLLECTION_NAME
         )
         
-
-        # 3) LLM 세팅(원코드 스펙 유지)
-        router_llm = ChatOpenAI(model="gpt-5-mini", temperature=0)
-        chat_refer_llm = ChatOpenAI(model="gpt-5-mini", temperature=0)
-        parse_year_llm = ChatOpenAI(model="gpt-5-mini", temperature=0)
-        followup_llm = ChatOpenAI(model="gpt-5-mini", temperature=0.2)
-        casual_llm = ChatOpenAI(model="gpt-5-mini", temperature=0.5, max_tokens=500)
-        main_llm = ChatOpenAI(model="gpt-5", temperature=0.2)
-        rewrite_llm = ChatOpenAI(model="gpt-5-mini", temperature=0)
-        validator_llm = ChatOpenAI(model="gpt-5", temperature=0)
-
-        llms = {
-            "router_llm": router_llm,
-            "chat_refer_llm": chat_refer_llm,
-            "parse_year_llm": parse_year_llm,
-            "followup_llm": followup_llm,
-            "casual_llm": casual_llm,
-            "main_llm": main_llm,
-            "rewrite_llm": rewrite_llm,
-            "validator_llm": validator_llm,
-        }
-
-        return vectorstore, llms, None
+        return vectorstore, None
 
     except Exception as e:
         return None, {}, f"{type(e).__name__}: {e}"
@@ -3077,4 +3086,5 @@ if __name__ == "__main__":
             import traceback
             traceback.print_exc()
             continue
+
 
