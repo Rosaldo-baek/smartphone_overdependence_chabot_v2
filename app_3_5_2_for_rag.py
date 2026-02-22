@@ -24,7 +24,7 @@ if SCRIPT_DIR not in sys.path:
 # =========================================================
 # LangGraph 모듈 import
 # =========================================================
-from smart_langgraph_for_3 import (
+from smart_langgraph_for_3_5_2 import (
     # 상수
     YEAR_TO_FILENAME,
     BOT_IDENTITY,
