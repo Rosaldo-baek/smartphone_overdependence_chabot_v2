@@ -19,11 +19,71 @@ from langchain_chroma import Chroma
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
 from huggingface_hub import snapshot_download
+import streamlit as st
+
 
 logger = logging.getLogger(__name__)
 
 RAG_DICT_PATH = r'rag_retrieval_dictionary.json'
 LOCAL_DB_PATH = "./chroma_db_store"
+
+##-----------Chroma 로딩 : Persist_driectory에 저장된 컬렉션을 재사용하는 구조 ---------- 
+HF_REPO_ID = "Rosaldowithbaek/smartphoe_overdependence_survey_chromadb"
+
+def download_hf_chroma_repo(repo_id: str, local_dir: str) -> str:
+    path = snapshot_download(
+            repo_id=repo_id,                 # 내려받을 리포 ID
+            repo_type="dataset",             # dataset 리포라고 가정
+            local_dir=local_dir,             # 로컬 저장 위치
+            local_dir_use_symlinks=False,    # 심링크 대신 실제 파일로 저장(호환성 좋음)
+        )
+    return path
+
+# 실제 다운로드 실행해서 persist_dir(로컬 폴더 경로) 확보함
+persist_dir = download_hf_chroma_repo(HF_REPO_ID, LOCAL_DB_PATH)
+
+COLLECTION_NAME = "pdf_pages_with_summary_v2"
+
+
+def init_resources(
+    openai_api_key: Optional[str] = None,
+    persist_dir: str = persist_dir,
+) -> Tuple[Optional[Chroma], Dict[str, Any], Optional[str]]:
+    """
+    OpenAI + Chroma 리소스를 초기화하는 함수입니다.
+
+    반환:
+      - vectorstore: Chroma 인스턴스(실패 시 None)
+      - llms: 라우팅/생성/검증 등에 쓰는 LLM 객체 dict
+      - error: 오류 메시지(정상 시 None)
+
+    주의:
+      - 본 함수는 그래프 노드들이 참조하는 전역 변수(vectorstore, *_llm)를 세팅합니다.
+      - Streamlit에서는 st.cache_resource로 감싸서 1회만 초기화하는 것을 권장합니다.
+    """
+    api_key = None
+    try:
+        api_key = st.secrets.get("OPENAI_API_KEY")
+    except:
+        pass
+    
+    
+    global embedding, vectorstore
+
+    try:
+        # 2) Chroma 로딩(컬렉션명 유지)
+        # - Hugging Face 다운로드는 Streamlit 쪽에서 수행하고, 여기서는 persist_dir만 받는 형태로 둠
+        embedding = OpenAIEmbeddings(model="text-embedding-3-large")
+        vectorstore = Chroma(
+            persist_directory=persist_dir,
+            embedding_function=embedding,
+            collection_name=COLLECTION_NAME
+        )
+        
+        return vectorstore, None
+
+    except Exception as e:
+        return None, {}, f"{type(e).__name__}: {e}"
 
 
 ##-------라우팅 별 llm 설정 
@@ -401,23 +461,6 @@ def _detect_scope_mismatch(answer: str, context: str, dict_hint: dict) -> List[s
 ###API 셋팅 
 
     
-##-----------Chroma 로딩 : Persist_driectory에 저장된 컬렉션을 재사용하는 구조 ---------- 
-HF_REPO_ID = "Rosaldowithbaek/smartphoe_overdependence_survey_chromadb"
-
-def download_hf_chroma_repo(repo_id: str, local_dir: str) -> str:
-    path = snapshot_download(
-            repo_id=repo_id,                 # 내려받을 리포 ID
-            repo_type="dataset",             # dataset 리포라고 가정
-            local_dir=local_dir,             # 로컬 저장 위치
-            local_dir_use_symlinks=False,    # 심링크 대신 실제 파일로 저장(호환성 좋음)
-        )
-    return path
-
-# 실제 다운로드 실행해서 persist_dir(로컬 폴더 경로) 확보함
-persist_dir = download_hf_chroma_repo(HF_REPO_ID, LOCAL_DB_PATH)
-
-COLLECTION_NAME = "pdf_pages_with_summary_v2"
-
 
 embedding: Optional[OpenAIEmbeddings] = None
 vectorstore: Optional[Chroma] = None
@@ -431,42 +474,7 @@ main_llm: Optional[ChatOpenAI] = None
 rewrite_llm: Optional[ChatOpenAI] = None
 validator_llm: Optional[ChatOpenAI] = None
 
-def init_resources(
-    openai_api_key: Optional[str] = None,
-    persist_dir: str = persist_dir,
-) -> Tuple[Optional[Chroma], Dict[str, Any], Optional[str]]:
-    """
-    OpenAI + Chroma 리소스를 초기화하는 함수입니다.
 
-    반환:
-      - vectorstore: Chroma 인스턴스(실패 시 None)
-      - llms: 라우팅/생성/검증 등에 쓰는 LLM 객체 dict
-      - error: 오류 메시지(정상 시 None)
-
-    주의:
-      - 본 함수는 그래프 노드들이 참조하는 전역 변수(vectorstore, *_llm)를 세팅합니다.
-      - Streamlit에서는 st.cache_resource로 감싸서 1회만 초기화하는 것을 권장합니다.
-    """
-    global embedding, vectorstore
-
-    try:
-        # 1) API 키 세팅: 함수 인자 > 환경변수 순
-        if not os.getenv("OPENAI_API_KEY"):
-            return None, {}, "OPENAI_API_KEY가 설정되어 있지 않습니다."
-
-        # 2) Chroma 로딩(컬렉션명 유지)
-        # - Hugging Face 다운로드는 Streamlit 쪽에서 수행하고, 여기서는 persist_dir만 받는 형태로 둠
-        embedding = OpenAIEmbeddings(model="text-embedding-3-large")
-        vectorstore = Chroma(
-            persist_directory=persist_dir,
-            embedding_function=embedding,
-            collection_name=COLLECTION_NAME
-        )
-        
-        return vectorstore, None
-
-    except Exception as e:
-        return None, {}, f"{type(e).__name__}: {e}"
 
 def create_node_functions(
     vectorstore_obj: Chroma,
