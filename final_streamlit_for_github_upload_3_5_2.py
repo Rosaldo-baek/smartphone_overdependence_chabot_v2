@@ -1,5 +1,6 @@
 
 
+
 from __future__ import annotations
 import json 
 from typing import Dict, Any, List, Optional, Literal, TypedDict, Tuple
@@ -18,39 +19,108 @@ from langchain_chroma import Chroma
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
 
+import streamlit as st
+
+
 logger = logging.getLogger(__name__)
 
+RAG_DICT_PATH = r'rag_retrieval_dictionary.json'
+
+##-----------Chroma 로딩 : Persist_driectory에 저장된 컬렉션을 재사용하는 구조 ---------- 
+HF_REPO_ID = "Rosaldowithbaek/smartphoe_overdependence_survey_chromadb"
+LOCAL_DB_PATH = "./chroma_db_store"
+
+
+
+##-------라우팅 별 llm 설정 
+router_llm = ChatOpenAI(model='gpt-5-mini', temperature=0)
+#채팅 참조 판정용 
+chat_refer_llm = ChatOpenAI(model='gpt-5-mini', temperature=0)
+#연도 파싱용
+parse_year_llm = ChatOpenAI(model='gpt-5-mini', temperature=0)
+#후속질문 리라이트용 
+followup_llm = ChatOpenAI(model='gpt-5-mini', temperature=0.2)
+#일반대화/메타/일반조언용 
+casual_llm = ChatOpenAI(model='gpt-5-mini', temperature=0.5, max_tokens=500)
+#RAG 답변 생성용 
+main_llm = ChatOpenAI(model='gpt-5', temperature=0.2)
+#--- 쿼리 리라이트용 
+rewrite_llm = ChatOpenAI(model='gpt-5-mini', temperature=0)
+#답변 검증용 
+validator_llm = ChatOpenAI(model='gpt-5', temperature=0)
+
+
+def download_hf_chroma_repo(repo_id: str, local_dir: str) -> str:
+    from huggingface_hub import snapshot_download  # 함수 내부로 import 이동(선택)
+    path = snapshot_download(
+        repo_id=repo_id,
+        repo_type="dataset",
+        local_dir=local_dir,
+        local_dir_use_symlinks=False,
+    )
+    return path
+
+# 실제 다운로드 실행해서 persist_dir(로컬 폴더 경로) 확보함
+persist_dir = LOCAL_DB_PATH
+
+COLLECTION_NAME = "pdf_pages_with_summary_v2"
+
+
+def init_resources(api_key: Optional[str] = None, persist_dir: str = persist_dir
+                   ) -> Tuple[Optional[Chroma], Dict[str, Any], Optional[str]]:
+    # api_key: 호출자가 넘긴 OpenAI 키(없으면 secrets/env에서 찾는 용도)임
+    try:  # 예외가 나도 앱이 죽지 않게 방어함
+        if not api_key:  # 인자가 비어있으면
+            try:
+                api_key = st.secrets.get("OPENAI_API_KEY")  # Streamlit secrets에서 키를 찾음
+            except Exception:
+                api_key = os.getenv("OPENAI_API_KEY")      # 없으면 환경변수에서 찾음
+
+        # (선택) 환경변수에 넣어 LangChain/OpenAI가 참조하게 함
+        if api_key:
+            os.environ["OPENAI_API_KEY"] = str(api_key)
+
+        global embedding, vectorstore  # 전역에 세팅해서 다른 노드가 재사용하게 함
+
+        # 임베딩/벡터스토어 초기화
+        embedding = OpenAIEmbeddings(model="text-embedding-3-large")  # 임베딩 모델 객체 생성
+        vectorstore = Chroma(  # Chroma DB 연결(로컬 persist dir 사용)
+            persist_directory=persist_dir,
+            embedding_function=embedding,
+            collection_name=COLLECTION_NAME
+        )
+
+        # ★ llms dict를 채워서 반환 (create_node_functions가 비어있으면 에러 내기 때문)
+        llms: Dict[str, Any] = {  # 그래프/노드에서 쓸 LLM들을 dict로 모음
+            "router_llm": router_llm,
+            "chat_refer_llm": chat_refer_llm,
+            "parse_year_llm": parse_year_llm,
+            "followup_llm": followup_llm,
+            "casual_llm": casual_llm,
+            "main_llm": main_llm,
+            "rewrite_llm": rewrite_llm,
+            "validator_llm": validator_llm,
+        }
+
+        return vectorstore, llms, None  # (vectorstore, llms, error=None) 3개 반환으로 통일
+
+    except Exception as e:
+        return None, {}, f"{type(e).__name__}: {e}"  # 실패도 (None, {}, "에러")로 3개 반환
+
+
 try:
-    from langchain_core.runnables.base import Runnable
-except Exception:  # pragma: no cover
-    Runnable = object  # 타입 체크 폴백
-from langchain_core.runnables import RunnableLambda
-
-def _as_runnable(obj):
-    """LCEL 파이프(|)에 안전하게 넣기 위한 래퍼입니다.
-    - obj가 Runnable이면 그대로 사용
-    - obj에 invoke가 있으면 RunnableLambda로 감싸서 Runnable로 변환
-    - obj가 callable이면 RunnableLambda로 감쌉니다.
-    """
-    if isinstance(obj, Runnable):
-        return obj
-    if hasattr(obj, "invoke"):
-        return RunnableLambda(lambda x: obj.invoke(x))
-    if callable(obj):
-        return RunnableLambda(obj)
-    raise TypeError(f"LCEL 파이프에 넣을 수 없는 타입입니다: {type(obj).__name__}")
-
-
-RAG_DICT_PATH = os.getenv('RAG_DICT_PATH', 'rag_retrieval_dictionary.json')
-try:
-    with open(RAG_DICT_PATH, 'r', encoding='utf-8') as f:
+    with open(RAG_DICT_PATH, "r", encoding="utf-8") as f:
         RAG_DICT = json.load(f)
 except FileNotFoundError:
-    logger.warning("RAG_DICT 파일을 찾지 못했습니다: %s", RAG_DICT_PATH)
+    logger.warning("RAG_DICT_PATH 파일을 찾지 못했습니다: %s (빈 dict로 폴백)", RAG_DICT_PATH)
     RAG_DICT = {}
 except Exception as e:
-    logger.warning("RAG_DICT 로딩 중 오류: %s", str(e))
+    logger.warning("RAG_DICT_PATH 로딩 중 오류: %s (빈 dict로 폴백)", e)
     RAG_DICT = {}
+
+
+    
+    
 def _build_rag_dict_index(rag_dict:dict) -> dict:
     idx = {
         "core_synonyms":{}, # 핵심 용어(예: 과의존)의 동의어 목록
@@ -393,42 +463,28 @@ def _detect_scope_mismatch(answer: str, context: str, dict_hint: dict) -> List[s
 
     return issues
 
-###API 셋팅 
 
-if not os.getenv("OPENAI_API_KEY"):
-    # 로컬 개발 환경에서만 키 파일을 사용(배포/Streamlit Cloud에서는 secrets/env 사용 권장)
-    try:
-        with open('openai_api_for_rag_test.txt', 'r', encoding='utf-8') as key:
-            os.environ['OPENAI_API_KEY'] = key.read().strip()
-    except FileNotFoundError:
-        # 키 파일이 없으면 그냥 통과(상위 Streamlit 코드에서 사용자 입력/Secrets로 주입 가능)
-        pass
-##-----------Chroma 로딩 : Persist_driectory에 저장된 컬렉션을 재사용하는 구조 ---------- 
-PERSIST_DIR = r"./chroma_db_store"    
-embedding = OpenAIEmbeddings(model= "text-embedding-3-large")
+def create_node_functions(
+    vectorstore_obj: Chroma,
+    llms: Dict[str, Any],
+    status_placeholder: Any = None,
+) -> Dict[str, Any]:
+    """
+    Streamlit 샘플 코드와 인터페이스를 맞추기 위한 '호환용' 함수입니다.
 
-vectorstore = Chroma(
-    persist_directory=PERSIST_DIR,
-    embedding_function = embedding,
-    collection_name = "pdf_pages_with_summary_v2"
-    )
+    - 원코드는 그래프 노드들이 전역 변수(vectorstore, *_llm)를 참조하는 구조입니다.
+    - Streamlit main() 예시에서 create_node_functions(vectorstore, llms, ...)를 호출하므로,
+      여기서는 init_resources()가 설정한 전역 리소스를 재사용하도록 두고, 단순히 dict를 반환합니다.
+    - status_placeholder는 현재 코어 노드들이 print 기반이라 직접 사용하진 않습니다(추후 개선 포인트).
+    """
+    # 호환 목적: 호출자에서 받은 객체와 전역이 어긋나지 않도록 최소 검증만 합니다.
+    if vectorstore_obj is None:
+        raise ValueError("vectorstore_obj가 None입니다. init_resources() 성공 여부를 확인하세요.")
+    if not isinstance(llms, dict) or not llms:
+        raise ValueError("llms dict가 비어 있습니다. init_resources() 성공 여부를 확인하세요.")
 
-##-------라우팅 별 llm 설정 
-router_llm = ChatOpenAI(model='gpt-5-mini', temperature=0)
-#채팅 참조 판정용 
-chat_refer_llm = ChatOpenAI(model='gpt-5-mini', temperature=0)
-#연도 파싱용
-parse_year_llm = ChatOpenAI(model='gpt-5-mini', temperature=0)
-#후속질문 리라이트용 
-followup_llm = ChatOpenAI(model='gpt-5-mini', temperature=0.2)
-#일반대화/메타/일반조언용 
-casual_llm = ChatOpenAI(model='gpt-5-mini', temperature=0.5, max_tokens=500)
-#RAG 답변 생성용 
-main_llm = ChatOpenAI(model='gpt-5', temperature=0.2)
-#--- 쿼리 리라이트용 
-rewrite_llm = ChatOpenAI(model='gpt-5-mini', temperature=0)
-#답변 검증용 
-validator_llm = ChatOpenAI(model='gpt-5', temperature=0)
+    return {"status_placeholder": status_placeholder}
+
 
 YEAR_TO_FILENAME = {
     2020: "2020년_스마트폰_과의존_실태조_사보고서.pdf",
@@ -592,7 +648,7 @@ def is_chat_reference_question(context: str, curr: str) -> bool:
         ("system", chat_refer_prompt),
         ("human", '{curr}')
     ])
-    chat_refer_chain = system_chat_refer_prompt | _as_runnable(chat_refer_llm) | StrOutputParser()
+    chat_refer_chain = system_chat_refer_prompt | chat_refer_llm | StrOutputParser()
     result = chat_refer_chain.invoke({'context': context, "curr": curr})
     result = result.strip()
     result_re = _True_False_re.search(result)
@@ -730,7 +786,7 @@ def parse_year_range(user_input:str) -> List[int]:
         ("system", parse_year_prompt),
         ("human", '{text}')
     ])
-    parse_year_chain = system_parse_year_prompt | _as_runnable(parse_year_llm) | StrOutputParser()
+    parse_year_chain = system_parse_year_prompt | parse_year_llm | StrOutputParser()
     result_years = parse_year_chain.invoke({
         'text': user_input,
         'available_years': available_years,
@@ -829,7 +885,7 @@ def classify_followup_type(user_input: str, context: str) -> str:
         ("system", followup_rewrite_prompt),
         ("human", '{curr}')
     ])
-    followup_answer_chain = system_followup_rewrite_prompt | _as_runnable(followup_llm) | StrOutputParser()
+    followup_answer_chain = system_followup_rewrite_prompt | followup_llm | StrOutputParser()
     follow_result = followup_answer_chain.invoke({'context': context, "curr": user_input})
     follow_question = follow_result.strip()
     return follow_question
@@ -925,7 +981,7 @@ def is_personal_memory_question(context: str, curr: str) -> bool:
         ("human", "{curr}")
     ])
     # 2) 체인을 구성함 (판정은 router_llm 재사용 가능)
-    chain = system_prompt | _as_runnable(router_llm) | StrOutputParser()
+    chain = system_prompt | router_llm | StrOutputParser()
     # 3) 실행하여 결과 텍스트를 받음
     result = (chain.invoke({"context": context, "curr": curr}) or "").strip()
     # 4) True/False 토큰만 정규식으로 추출함(노이즈 방지)
@@ -1065,7 +1121,7 @@ def route_intent(state: GraphState) -> GraphState:
         
         # ---- 질문 기반 힌트(앵커/경고/부록필요 등) 생성해서 state에 저장 ----
         dict_hint = _infer_dict_hint(user_input, context_text=context_text)
-        state["dict_hint"] = _hint
+        state["dict_hint"] = dict_hint
         allowed = {"SMALLTALK", "META", "RAG", "GENERAL_ADVICE"}
         
         # ---- 라우터 실행(실패하면 예외 처리하고 폴백) ----
@@ -1074,7 +1130,7 @@ def route_intent(state: GraphState) -> GraphState:
         router_error = None
         router_fallback_reason = None
         try:
-            router_chain = router_prompt | _as_runnable(router_llm) | StrOutputParser()
+            router_chain = router_prompt | router_llm | StrOutputParser()
             router_output = router_chain.invoke({
                 "input": user_input,
                 "chat_history": chat_history,
@@ -1125,7 +1181,7 @@ def route_intent(state: GraphState) -> GraphState:
                  "[이전 대화]\n{context}\n\n[현재 질문]\n{question}\n\n판정:")
             ])
             try:
-                override_chain = rag_override_prompt | _as_runnable(router_llm) | StrOutputParser()
+                override_chain = rag_override_prompt | router_llm | StrOutputParser()
                 override_result = override_chain.invoke({
                     "context": context_text[-2000:],
                     "question": user_input,
@@ -1240,7 +1296,7 @@ smalltalk_prompt = ChatPromptTemplate.from_messages([
     MessagesPlaceholder(variable_name="chat_history"),
     ("human", "{input}")
 ])
-smalltalk_chain = smalltalk_prompt | _as_runnable(casual_llm) | StrOutputParser()
+smalltalk_chain = smalltalk_prompt | casual_llm | StrOutputParser()
 
 
 def respond_smalltalk(state: GraphState) -> GraphState:
@@ -1286,7 +1342,7 @@ meta_system = """
 [WHAT YOU CAN SAY]
 - 이 시스템이 다루는 자료 범위(예: 스마트폰 과의존 실태조사 보고서 2020~2024)
 - 라우팅 라벨(SMALLTALK/META/RAG/GENERAL_ADVICE) 의미
-- 질문을 더 잘 받기 위한 입력 팁(연도/대상/지표/표현 방식 등)
+- 질문에 대한 답을 더 잘 받기 위한 입력 팁(연도/대상/지표/표현 방식 등)
 
 [RESTRICTIONS]
 - 존재하지 않는 기능/데이터/권한을 만들어내지 말 것
@@ -1312,7 +1368,7 @@ meta_prompt = ChatPromptTemplate.from_messages([
     MessagesPlaceholder(variable_name="chat_history"),
     ("human", "{input}")
 ])
-meta_chain = meta_prompt | _as_runnable(casual_llm) | StrOutputParser()
+meta_chain = meta_prompt | casual_llm | StrOutputParser()
 
 
 def respond_meta(state: GraphState) -> GraphState:
@@ -1383,7 +1439,7 @@ general_advice_prompt = ChatPromptTemplate.from_messages([
     MessagesPlaceholder(variable_name="chat_history"),
     ("human", "{input}")
 ])
-general_advice_chain = general_advice_prompt | _as_runnable(casual_llm) | StrOutputParser()
+general_advice_chain = general_advice_prompt | casual_llm | StrOutputParser()
 
 
 def respond_general_advice(state: GraphState) -> GraphState:
@@ -1607,7 +1663,7 @@ def plan_search(state: GraphState) -> GraphState:
 
         # planner_chain: planner_prompt + validator_llm 로 "플랜 JSON" 생성
         # - 여기서 validator_llm을 쓰는 이유는 온도0(결정적)로 JSON을 안정적으로 받기 위함
-        planner_chain = planner_prompt | _as_runnable(validator_llm) | StrOutputParser()
+        planner_chain = planner_prompt | validator_llm | StrOutputParser()
         
         # 후속질문이면 히스토리를 너무 길게 안 주고 최근 4개만 주는 최적화(토큰 절약)
         effective_history = []
@@ -1687,7 +1743,7 @@ def plan_search(state: GraphState) -> GraphState:
         ])
 
         # - 의도: 모델이 JSON을 잘 내도록 prompt 강제
-        validator_chain = validator_prompt_tmpl | _as_runnable(router_llm) | StrOutputParser()
+        validator_chain = validator_prompt_tmpl | router_llm | StrOutputParser()
         # 검증기 실행: plan을 JSON 문자열로 넘겨주고 허용 years/files도 같이 제공함
         v_raw = validator_chain.invoke({
             "original_question": user_input,
@@ -1971,7 +2027,7 @@ def query_rewrite(state: GraphState) -> GraphState:
         # 2) LLM으로 쿼리 최적화 실행
         # -----------------------------
         # _rewrite_prompt_25: 쿼리 최적화용 프롬프트(질문/현재쿼리/연도 입력)
-        result = (_rewrite_prompt_25 | _as_runnable(rewrite_llm) | StrOutputParser()).invoke({
+        result = (_rewrite_prompt_25 | rewrite_llm | StrOutputParser()).invoke({
             "resolved_question": resolved_q,
             "queries": str(queries),
             "years": str(years),
@@ -2392,7 +2448,7 @@ def extract_key_figures(state: GraphState) -> GraphState:
         years_str = ", ".join([str(y) for y in years if str(y).strip()])
         resolved_q_for_extract = f"{resolved_q}\n[요청 연도] {years_str}".strip()
 
-        raw = (EXTRACT_FIGURES_PROMPT | _as_runnable(rewrite_llm) | StrOutputParser()).invoke({
+        raw = (EXTRACT_FIGURES_PROMPT | rewrite_llm | StrOutputParser()).invoke({
             "resolved_question": resolved_q_for_extract,
             "context": context[:20000],
         })
@@ -2522,14 +2578,14 @@ def generate_answer(state: GraphState) -> GraphState:
         if retry_count > 0 and state.get("retry_type") == "generate":
             previous_issue = state.get("validation_reason", "형식 문제")
             # 5) 생성 프롬프트 선택(일반 생성 vs 재생성)
-            answer = (_answer_retry_prompt_25 | _as_runnable(main_llm) | StrOutputParser()).invoke({
+            answer = (_answer_retry_prompt_25 | main_llm | StrOutputParser()).invoke({
                 "input": resolved_q,
                 "context": context,
                 "previous_issue": previous_issue,
                 "context_guard": context_guard,
             })
         else:
-            answer = (_answer_prompt_25 | _as_runnable(main_llm) | StrOutputParser()).invoke({
+            answer = (_answer_prompt_25 | main_llm | StrOutputParser()).invoke({
                 "input": resolved_q,
                 "context": context,
                 "context_guard": context_guard,
@@ -2604,7 +2660,7 @@ def validate_answer(state: GraphState) -> GraphState:
         context_guard = _build_context_guard(dict_hint, resolved_q) # "컨텍스트 밖 수치 생성 금지" 등 경고문 생성
 
         # 3) LLM 검증 실행: 질문 + 컨텍스트 + 답변 + 가드를 전달
-        result = (_validator_prompt_25 | _as_runnable(validator_llm) | StrOutputParser()).invoke({
+        result = (_validator_prompt_25 | validator_llm | StrOutputParser()).invoke({
             "input": resolved_q,
             "context": context[:15000],
             "answer": state["draft_answer"],
@@ -2851,13 +2907,6 @@ def build_graph():
     return workflow.compile(checkpointer=memory)
 
 
-# =============================================================================
-# 초기화
-# =============================================================================
-app = build_graph()
-print("[INFO] LangGraph 챗봇 (Merged CLI v5.1) 준비 완료")
-app.get_graph().draw_mermaid_png(output_file_path="3_5_2_mergeall_v1.png")
-
 
 # =============================================================================
 # CLI 헬퍼 함수
@@ -2924,6 +2973,16 @@ def print_debug_info(state: GraphState):
 if __name__ == "__main__":
     session_id = "default"
     DEBUG_ON = False
+
+    # CLI 실행 시에도 리소스를 명시적으로 초기화합니다.
+    # - OPENAI_API_KEY는 환경변수로 미리 세팅되어 있어야 합니다.
+    _vs, _llms, _err = init_resources()
+    if _err:
+        print(f"[초기화 오류] {_err}")
+        print("OPENAI_API_KEY 환경변수 설정 후 다시 실행하세요.")
+        raise SystemExit(1)
+
+    app = build_graph()
 
     print("=" * 60)
     print("  스마트폰 과의존 실태조사 챗봇 (Merged CLI v5.1)")
