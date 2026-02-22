@@ -422,15 +422,48 @@ def main():
             인사이트 제공, 일반 대화, 보고서 외 정보 검색에는 적합하지 않습니다.
         </div>
         <div class="guide-item">
-            <strong>검색 팁:</strong> 질문은 <strong>최대한 구체적으로</strong> 작성해 주세요.<br>
-            예) "과의존률" → "2024년 청소년 스마트폰 과의존 위험군 비율"<br>
-            예) "숏폼과 과의존" → "숏폼 이용률에 따른 과의존 차이"<br>
-            연속된 요청은 성능을 저하하는 원인이 될 수 있습니다. 대화 초기화를 통해 새롭게 세션을 구성하세요.
+            <strong>검색 팁:</strong> 아래 3가지 요소를 포함하면 정확도가 높아집니다.<br>
+            <table style="width:100%; margin-top:8px; font-size:0.85rem; border-collapse:collapse;">
+        
+                <!-- ① 연도 -->
+                <tr style="border-bottom:1px solid rgba(255,255,255,0.15);">
+                    <td style="padding:6px 8px; color:#a8c5e2; width:70px;"><strong>① 연도</strong></td>
+                    <td style="padding:6px 8px;">
+                        2020~2024 중 선택 <span style="color:#ccc;">(미입력 시 2023~2024 적용)</span><br>
+                        <span style="color:#7eb8e7;">💡 “최근 N년”은 기준연도 계산 후 2020~2024 밖 연도는 제외되어 범위가 좁아질 수 있어 숫자 연도 권장</span>
+                    </td>
+                </tr>
+            
+                <!-- ② 대상 -->
+                <tr style="border-bottom:1px solid rgba(255,255,255,0.15);">
+                    <td style="padding:6px 8px; color:#a8c5e2;"><strong>② 대상</strong></td>
+                    <td style="padding:6px 8px;">
+                        유아동(만3~9, 보호자응답) / 청소년(10~19) / 성인(20~59) / 60대(60~69, 고령층·시니어)<br>
+                        <span style="color:#ccc;">※ 70대 이상은 조사 대상 아님</span>
+                    </td>
+                </tr>
+
+                <!-- ③ 지표/용어 -->
+                <tr style="border-bottom:1px solid rgba(255,255,255,0.15);">
+                    <td style="padding:6px 8px; color:#a8c5e2;"><strong>③ 지표</strong></td>
+                    <span style="color:#7eb8e7;">- 콘텐츠 이용률(%)</span> vs <span style="color:#7eb8e7;">콘텐츠 이용정도(빈도/점수)</span> 구분해서 입력
+                    </td>
+                </tr>
+
+                <!-- 선택 안내 -->
+                <tr>
+                    <td style="padding:6px 8px; color:#a8c5e2;"><strong>(선택)</strong></td>
+                    <td style="padding:6px 8px;">
+                    교차조건(성별/대상 등)이나 주제 키워드(숏폼/콘텐츠명/지표명/예방교육 등)를 추가하면 더 정확해집니다.
+                    </td>
+                </tr>
+
+            </table>
         </div>
         <div class="guide-item">
             <strong>주의:</strong> AI 답변에 <strong>오류(할루시네이션)</strong>가 있을 수 있습니다. <br>
-            검색 결과를 바로 인용하지 마시고, <strong>원문을 통해 확인</strong>한 뒤 정보를 사용하십시오.
-            <a href="https://www.nia.or.kr" target="_blank">NIA 홈페이지</a>에서 원문 확인 권장.
+            검색 결과를 바로 인용하지 마시고, <strong>원문을 통해 확인</strong>한 뒤 정보를 사용하십시오.<br>
+            왼쪽의 pdf 보고서 다운로드 혹은 <a href="https://www.nia.or.kr" target="_blank">NIA 홈페이지</a>에서 원문 확인 권장<br>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -585,3 +618,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
