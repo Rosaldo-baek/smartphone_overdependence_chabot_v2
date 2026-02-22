@@ -395,6 +395,7 @@ guide_html = """
     검색 결과를 바로 인용하지 마시고, <strong>원문을 통해 확인</strong>한 뒤 정보를 사용하십시오.<br />
     왼쪽의 pdf 보고서 다운로드 혹은
     <a href="https://www.nia.or.kr" target="_blank">NIA 홈페이지</a>에서 원문 확인 권장<br />
+    단 pdf 다운로드 클릭시 기존 채팅이 멈출 수 있으니 사전에 혹은 모든 대화가 끝난 이후 다운로드를 해주세요<br />
   </div>
 </div>
 """
@@ -600,6 +601,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
