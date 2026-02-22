@@ -2970,8 +2970,32 @@ def print_debug_info(state: GraphState):
 # =============================================================================
 # 메인 CLI
 # =============================================================================
-if __name__ == "__main__":
-    session_id = "default"
+def _is_running_in_streamlit() -> bool:
+    """
+    streamlit run으로 실행 중인지 판별함.
+
+    - streamlit run 환경에서는 ScriptRunContext가 존재함
+    - 일반 python 실행에서는 컨텍스트가 없어 None이 나오는 구조임
+    """
+    try:
+        # streamlit 내부 런타임 컨텍스트 접근 (버전별 import 경로 차이 방어 포함)
+        try:
+            from streamlit.runtime.scriptrunner.script_run_context import get_script_run_ctx  # type: ignore
+        except Exception:
+            from streamlit.runtime.scriptrunner import get_script_run_ctx  # type: ignore
+
+        return get_script_run_ctx() is not None
+    except Exception:
+        # streamlit 미설치/구버전 등 예외면 'streamlit 실행 아님'으로 처리
+        return False
+
+
+def run_cli(session_id: str = "default") -> None:
+    """
+    기존 '메인 CLI' 로직을 함수로 감싼 것임.
+    - 기존 코드의 동작(리소스 초기화 → build_graph → while input 루프)을 그대로 유지해야 함
+    """
+    global DEBUG_ON
     DEBUG_ON = False
 
     # CLI 실행 시에도 리소스를 명시적으로 초기화합니다.
@@ -3027,7 +3051,7 @@ if __name__ == "__main__":
 
             chat_history = format_chat_history(chat_histories[session_id])
 
-            print("\n분석 중...")
+            print("\n분석 중.")
 
             config = {
                 "configurable": {"thread_id": session_id},
@@ -3069,4 +3093,16 @@ if __name__ == "__main__":
             import traceback
             traceback.print_exc()
             continue
+
+
+if __name__ == "__main__":
+    # streamlit run으로 이 코어 파일을 직접 실행한 경우:
+    # - CLI(input 대기)로 떨어지면 화면이 비어 보이므로, Streamlit 화면에서 안내 후 중단함
+    if _is_running_in_streamlit():
+        st.error("이 파일은 코어/CLI 모듈입니다. Streamlit UI 파일을 실행해 주십시오.")
+        st.code("streamlit run <Streamlit_UI_파일명>.py")
+        st.stop()
+
+    # 일반 python 실행이면 CLI로 동작
+    run_cli()
 
