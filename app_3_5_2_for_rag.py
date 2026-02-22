@@ -363,7 +363,7 @@ def create_status_callback(status_placeholder):
     return callback
 
 # 사용자 가이드 박스 (들여쓰기/개행 때문에 코드블록으로 보이는 문제 방지)
-guide_html ="""
+guide_html = """
 <div class="guide-box">
   <div class="guide-title">📌 사용 안내</div>
 
@@ -376,7 +376,6 @@ guide_html ="""
     <strong>검색 팁:</strong> 아래 3가지 요소를 포함하면 정확도가 높아집니다.<br>
 
     <table>
-
       <!-- ① 연도 -->
       <tr style="border-bottom:1px solid rgba(120,120,120,0.25);">
         <td style="width:70px;"><strong>① 연도</strong></td>
@@ -415,7 +414,6 @@ guide_html ="""
           교차조건(성별/대상 등)이나 주제 키워드(숏폼/콘텐츠명/지표명/예방교육 등)를 추가하면 더 정확해집니다.
         </td>
       </tr>
-
     </table>
   </div>
 
@@ -629,6 +627,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
