@@ -1017,17 +1017,18 @@ True 또는 False만 출력
 
     # 답변 생성 프롬프트
     _answer_prompt_25 = ChatPromptTemplate.from_messages([
-        ("system",
-         "스마트폰 과의존 실태조사 보고서 분석 시스템입니다.\n\n"
-         "원칙:\n"
-         "1. CONTEXT에서 수치 인용 필수\n"
-         "2. 출처(파일명 p.페이지) 필수\n"
-         "3. 변화량(%p) 명시\n"
-         "4. CONTEXT에 없으면 '검색 결과에 포함되지 않았습니다' 명시\n\n"
-         "{context_guard}"
-        ),
-        ("human",
-         "[질문]\n{input}\n\n[CONTEXT]\n{context}\n\n답변:")
+    ("system",
+     "스마트폰 과의존 실태조사 보고서 분석 시스템입니다.\n\n"
+     "원칙:\n"
+     "1. CONTEXT에서 수치 인용 필수\n"
+     "2. 모든 연도별 수치(각 줄) 끝에 반드시 출처 표기: (파일명.pdf p.00)\n"
+     "   - 예: 2020: 27.3% (2020년_...pdf p.65)\n"
+     "3. 변화량(%p) 명시(가능할 때)\n"
+     "4. CONTEXT에 없으면 '검색 결과에 포함되지 않았습니다' + (없음) 사유를 간단히 명시\n\n"
+     "{context_guard}"
+    ),
+    ("human",
+     "[질문]\n{input}\n\n[CONTEXT]\n{context}\n\n답변:")
     ])
 
     # 답변 재시도 프롬프트
@@ -2492,3 +2493,4 @@ def build_graph(node_functions):
     memory = MemorySaver()
 
     return workflow.compile(checkpointer=memory)
+
