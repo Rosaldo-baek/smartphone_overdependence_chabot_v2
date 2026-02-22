@@ -9,7 +9,7 @@ import streamlit as st
 import os
 import sys
 import pandas as pd
-from textwrap import dedent
+
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_chroma import Chroma
@@ -363,7 +363,7 @@ def create_status_callback(status_placeholder):
     return callback
 
 # 사용자 가이드 박스 (들여쓰기/개행 때문에 코드블록으로 보이는 문제 방지)
-guide_html = dedent("""\
+guide_html ="""
 <div class="guide-box">
   <div class="guide-title">📌 사용 안내</div>
 
@@ -426,8 +426,7 @@ guide_html = dedent("""\
     <a href="https://www.nia.or.kr" target="_blank">NIA 홈페이지</a>에서 원문 확인 권장<br>
   </div>
 </div>
-""").strip()
-
+"""
 
 # =========================================================
 # 메인 UI
@@ -473,7 +472,7 @@ def main():
         debug_mode = st.checkbox("디버그 모드", value=False)
 
     # 사용자 가이드 박스 
-    st.markdown(guide_html, unsafe_allow_html=True)
+    st.markdown(guide_html.strip(), unsafe_allow_html=True)
     # DB 다운로드
     if not os.path.exists(LOCAL_DB_PATH) or not os.listdir(LOCAL_DB_PATH):
         st.info("🔄 Chroma DB를 다운로드하고 있습니다...")
@@ -630,6 +629,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
