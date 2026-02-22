@@ -375,42 +375,44 @@ guide_html = """
   <div class="guide-item">
     <strong>검색 팁:</strong> 아래 3가지 요소를 포함하면 정확도가 높아집니다.<br />
 
-    <div class="guide-table" style="border:1px solid rgba(120,120,120,0.25); border-radius:8px; overflow:hidden;">
-      <div class="gtr" style="display:flex; border-bottom:1px solid rgba(120,120,120,0.25);">
-        <div class="gtd" style="width:70px; padding:10px; font-weight:700;">① 연도</div>
-        <div class="gtd" style="flex:1; padding:10px;">
-          2020~2024 중 선택 <span style="opacity:0.75;">(미입력 시 2023~2024 적용)</span><br />
-          <span style="opacity:0.9;">
-            💡 “최근 N년”은 기준연도 계산 후 2020~2024 밖 연도는 제외되어 범위가 좁아질 수 있어 숫자 연도 권장
-          </span>
-        </div>
-      </div>
+    <table>
+      <tbody>
+        <tr style="border-bottom:1px solid rgba(120,120,120,0.25);">
+          <td style="width:70px;"><strong>① 연도</strong></td>
+          <td>
+            2020~2024 중 선택 <span style="opacity:0.75;">(미입력 시 2023~2024 적용)</span><br />
+            <span style="opacity:0.9;">
+              💡 “최근 N년”은 기준연도 계산 후 2020~2024 밖 연도는 제외되어 범위가 좁아질 수 있어 숫자 연도 권장
+            </span>
+          </td>
+        </tr>
 
-      <div class="gtr" style="display:flex; border-bottom:1px solid rgba(120,120,120,0.25);">
-        <div class="gtd" style="width:70px; padding:10px; font-weight:700;">② 대상</div>
-        <div class="gtd" style="flex:1; padding:10px;">
-          유아동(만3~9, 보호자응답) / 청소년(10~19) / 성인(20~59) / 60대(60~69, 고령층·시니어)<br />
-          <span style="opacity:0.75;">※ 70대 이상은 조사 대상 아님</span>
-        </div>
-      </div>
+        <tr style="border-bottom:1px solid rgba(120,120,120,0.25);">
+          <td><strong>② 대상</strong></td>
+          <td>
+            유아동(만3~9, 보호자응답) / 청소년(10~19) / 성인(20~59) / 60대(60~69, 고령층·시니어)<br />
+            <span style="opacity:0.75;">※ 70대 이상은 조사 대상 아님</span>
+          </td>
+        </tr>
 
-      <div class="gtr" style="display:flex; border-bottom:1px solid rgba(120,120,120,0.25);">
-        <div class="gtd" style="width:70px; padding:10px; font-weight:700;">③ 지표</div>
-        <div class="gtd" style="flex:1; padding:10px;">
-          <span style="opacity:0.9;">- 콘텐츠 이용률(%)</span>
-          vs
-          <span style="opacity:0.9;">콘텐츠 이용정도(빈도/점수)</span>
-          구분해서 입력
-        </div>
-      </div>
+        <tr style="border-bottom:1px solid rgba(120,120,120,0.25);">
+          <td><strong>③ 지표</strong></td>
+          <td>
+            <span style="opacity:0.9;">- 콘텐츠 이용률(%)</span>
+            vs
+            <span style="opacity:0.9;">콘텐츠 이용정도(빈도/점수)</span>
+            구분해서 입력
+          </td>
+        </tr>
 
-      <div class="gtr" style="display:flex;">
-        <div class="gtd" style="width:70px; padding:10px; font-weight:700;">(선택)</div>
-        <div class="gtd" style="flex:1; padding:10px;">
-          교차조건(성별/대상 등)이나 주제 키워드(숏폼/콘텐츠명/지표명/예방교육 등)를 추가하면 더 정확해집니다.
-        </div>
-      </div>
-    </div>
+        <tr>
+          <td><strong>(선택)</strong></td>
+          <td>
+            교차조건(성별/대상 등)이나 주제 키워드(숏폼/콘텐츠명/지표명/예방교육 등)를 추가하면 더 정확해집니다.
+          </td>
+        </tr>
+      </tbody>
+    </table>
   </div>
 
   <div class="guide-item">
@@ -623,6 +625,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
