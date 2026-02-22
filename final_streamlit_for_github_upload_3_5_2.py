@@ -25,6 +25,20 @@ logger = logging.getLogger(__name__)
 RAG_DICT_PATH = r'rag_retrieval_dictionary.json'
 LOCAL_DB_PATH = "./chroma_db_store"
 
+from langchain_core.runnables import RunnableLambda
+
+def _as_runnable_llm(llm_obj):
+    """
+    LCEL(|)에서 사용할 수 있게 llm을 Runnable로 보정하는 함수임.
+    - 이미 invoke()가 있으면 그대로 사용
+    - invoke()가 없으면 TypeError로 명확히 실패시키는 방식
+    """
+    if hasattr(llm_obj, "invoke"):
+        return llm_obj
+    raise TypeError(f"chat_refer_llm 타입이 Runnable이 아님: {type(llm_obj)} (invoke() 없음)")
+
+
+
 ##-------라우팅 별 llm 설정 
 router_llm = ChatOpenAI(model='gpt-5-mini', temperature=0)
 #채팅 참조 판정용 
@@ -42,7 +56,6 @@ rewrite_llm = ChatOpenAI(model='gpt-5-mini', temperature=0)
 #답변 검증용 
 validator_llm = ChatOpenAI(model='gpt-5', temperature=0)
 
-
 try:
     with open(RAG_DICT_PATH, "r", encoding="utf-8") as f:
         RAG_DICT = json.load(f)
@@ -52,7 +65,8 @@ except FileNotFoundError:
 except Exception as e:
     logger.warning("RAG_DICT_PATH 로딩 중 오류: %s (빈 dict로 폴백)", e)
     RAG_DICT = {}
-    
+
+
     
     
 def _build_rag_dict_index(rag_dict:dict) -> dict:
@@ -402,19 +416,6 @@ def _detect_scope_mismatch(answer: str, context: str, dict_hint: dict) -> List[s
     
 ##-----------Chroma 로딩 : Persist_driectory에 저장된 컬렉션을 재사용하는 구조 ---------- 
 HF_REPO_ID = "Rosaldowithbaek/smartphoe_overdependence_survey_chromadb"
-LOCAL_DB_PATH = "./chroma_db_store"
-
-def download_hf_chroma_repo(repo_id: str, local_dir: str) -> str:
-    path = snapshot_download(
-            repo_id=repo_id,                 # 내려받을 리포 ID
-            repo_type="dataset",             # dataset 리포라고 가정
-            local_dir=local_dir,             # 로컬 저장 위치
-            local_dir_use_symlinks=False,    # 심링크 대신 실제 파일로 저장(호환성 좋음)
-        )
-    return path
-
-# 실제 다운로드 실행해서 persist_dir(로컬 폴더 경로) 확보함
-HF_REPO_ID = "Rosaldowithbaek/smartphoe_overdependence_survey_chromadb"
 
 def download_hf_chroma_repo(repo_id: str, local_dir: str) -> str:
     path = snapshot_download(
@@ -460,7 +461,6 @@ def init_resources(
       - Streamlit에서는 st.cache_resource로 감싸서 1회만 초기화하는 것을 권장합니다.
     """
     global embedding, vectorstore
-    global router_llm, chat_refer_llm, parse_year_llm, followup_llm, casual_llm, main_llm, rewrite_llm, validator_llm
 
     try:
         # 1) API 키 세팅: 함수 인자 > 환경변수 순
@@ -665,7 +665,7 @@ def is_chat_reference_question(context: str, curr: str) -> bool:
         ("system", chat_refer_prompt),
         ("human", '{curr}')
     ])
-    chat_refer_chain = system_chat_refer_prompt | chat_refer_llm | StrOutputParser()
+    chat_refer_chain = system_chat_refer_prompt | _as_runnable_llm(chat_refer_llm) | StrOutputParser()
     result = chat_refer_chain.invoke({'context': context, "curr": curr})
     result = result.strip()
     result_re = _True_False_re.search(result)
@@ -803,7 +803,7 @@ def parse_year_range(user_input:str) -> List[int]:
         ("system", parse_year_prompt),
         ("human", '{text}')
     ])
-    parse_year_chain = system_parse_year_prompt | parse_year_llm | StrOutputParser()
+    parse_year_chain = system_parse_year_prompt | _as_runnable_llm(parse_year_llm) | StrOutputParser()
     result_years = parse_year_chain.invoke({
         'text': user_input,
         'available_years': available_years,
@@ -902,7 +902,7 @@ def classify_followup_type(user_input: str, context: str) -> str:
         ("system", followup_rewrite_prompt),
         ("human", '{curr}')
     ])
-    followup_answer_chain = system_followup_rewrite_prompt | followup_llm | StrOutputParser()
+    followup_answer_chain = system_followup_rewrite_prompt | _as_runnable_llm(followup_llm) | StrOutputParser()
     follow_result = followup_answer_chain.invoke({'context': context, "curr": user_input})
     follow_question = follow_result.strip()
     return follow_question
@@ -998,7 +998,7 @@ def is_personal_memory_question(context: str, curr: str) -> bool:
         ("human", "{curr}")
     ])
     # 2) 체인을 구성함 (판정은 router_llm 재사용 가능)
-    chain = system_prompt | router_llm | StrOutputParser()
+    chain = system_prompt | _as_runnable_llm(router_llm) | StrOutputParser()
     # 3) 실행하여 결과 텍스트를 받음
     result = (chain.invoke({"context": context, "curr": curr}) or "").strip()
     # 4) True/False 토큰만 정규식으로 추출함(노이즈 방지)
@@ -1147,7 +1147,7 @@ def route_intent(state: GraphState) -> GraphState:
         router_error = None
         router_fallback_reason = None
         try:
-            router_chain = router_prompt | router_llm | StrOutputParser()
+            router_chain = router_prompt | _as_runnable_llm(router_llm) | StrOutputParser()
             router_output = router_chain.invoke({
                 "input": user_input,
                 "chat_history": chat_history,
@@ -1198,7 +1198,7 @@ def route_intent(state: GraphState) -> GraphState:
                  "[이전 대화]\n{context}\n\n[현재 질문]\n{question}\n\n판정:")
             ])
             try:
-                override_chain = rag_override_prompt | router_llm | StrOutputParser()
+                override_chain = rag_override_prompt | _as_runnable_llm(router_llm) | StrOutputParser()
                 override_result = override_chain.invoke({
                     "context": context_text[-2000:],
                     "question": user_input,
@@ -1313,7 +1313,7 @@ smalltalk_prompt = ChatPromptTemplate.from_messages([
     MessagesPlaceholder(variable_name="chat_history"),
     ("human", "{input}")
 ])
-smalltalk_chain = smalltalk_prompt | casual_llm | StrOutputParser()
+smalltalk_chain = smalltalk_prompt | _as_runnable_llm(casual_llm) | StrOutputParser()
 
 
 def respond_smalltalk(state: GraphState) -> GraphState:
@@ -1385,7 +1385,7 @@ meta_prompt = ChatPromptTemplate.from_messages([
     MessagesPlaceholder(variable_name="chat_history"),
     ("human", "{input}")
 ])
-meta_chain = meta_prompt | casual_llm | StrOutputParser()
+meta_chain = meta_prompt | _as_runnable_llm(casual_llm) | StrOutputParser()
 
 
 def respond_meta(state: GraphState) -> GraphState:
@@ -1456,7 +1456,7 @@ general_advice_prompt = ChatPromptTemplate.from_messages([
     MessagesPlaceholder(variable_name="chat_history"),
     ("human", "{input}")
 ])
-general_advice_chain = general_advice_prompt | casual_llm | StrOutputParser()
+general_advice_chain = general_advice_prompt | _as_runnable_llm(casual_llm) | StrOutputParser()
 
 
 def respond_general_advice(state: GraphState) -> GraphState:
@@ -1680,7 +1680,7 @@ def plan_search(state: GraphState) -> GraphState:
 
         # planner_chain: planner_prompt + validator_llm 로 "플랜 JSON" 생성
         # - 여기서 validator_llm을 쓰는 이유는 온도0(결정적)로 JSON을 안정적으로 받기 위함
-        planner_chain = planner_prompt | validator_llm | StrOutputParser()
+        planner_chain = planner_prompt | _as_runnable_llm(validator_llm) | StrOutputParser()
         
         # 후속질문이면 히스토리를 너무 길게 안 주고 최근 4개만 주는 최적화(토큰 절약)
         effective_history = []
@@ -1760,7 +1760,7 @@ def plan_search(state: GraphState) -> GraphState:
         ])
 
         # - 의도: 모델이 JSON을 잘 내도록 prompt 강제
-        validator_chain = validator_prompt_tmpl | router_llm | StrOutputParser()
+        validator_chain = validator_prompt_tmpl | _as_runnable_llm(router_llm) | StrOutputParser()
         # 검증기 실행: plan을 JSON 문자열로 넘겨주고 허용 years/files도 같이 제공함
         v_raw = validator_chain.invoke({
             "original_question": user_input,
@@ -2044,7 +2044,7 @@ def query_rewrite(state: GraphState) -> GraphState:
         # 2) LLM으로 쿼리 최적화 실행
         # -----------------------------
         # _rewrite_prompt_25: 쿼리 최적화용 프롬프트(질문/현재쿼리/연도 입력)
-        result = (_rewrite_prompt_25 | rewrite_llm | StrOutputParser()).invoke({
+        result = (_rewrite_prompt_25 | _as_runnable_llm(rewrite_llm) | StrOutputParser()).invoke({
             "resolved_question": resolved_q,
             "queries": str(queries),
             "years": str(years),
@@ -2465,7 +2465,7 @@ def extract_key_figures(state: GraphState) -> GraphState:
         years_str = ", ".join([str(y) for y in years if str(y).strip()])
         resolved_q_for_extract = f"{resolved_q}\n[요청 연도] {years_str}".strip()
 
-        raw = (EXTRACT_FIGURES_PROMPT | rewrite_llm | StrOutputParser()).invoke({
+        raw = (EXTRACT_FIGURES_PROMPT | _as_runnable_llm(rewrite_llm) | StrOutputParser()).invoke({
             "resolved_question": resolved_q_for_extract,
             "context": context[:20000],
         })
@@ -2595,14 +2595,14 @@ def generate_answer(state: GraphState) -> GraphState:
         if retry_count > 0 and state.get("retry_type") == "generate":
             previous_issue = state.get("validation_reason", "형식 문제")
             # 5) 생성 프롬프트 선택(일반 생성 vs 재생성)
-            answer = (_answer_retry_prompt_25 | main_llm | StrOutputParser()).invoke({
+            answer = (_answer_retry_prompt_25 | _as_runnable_llm(main_llm) | StrOutputParser()).invoke({
                 "input": resolved_q,
                 "context": context,
                 "previous_issue": previous_issue,
                 "context_guard": context_guard,
             })
         else:
-            answer = (_answer_prompt_25 | main_llm | StrOutputParser()).invoke({
+            answer = (_answer_prompt_25 | _as_runnable_llm(main_llm) | StrOutputParser()).invoke({
                 "input": resolved_q,
                 "context": context,
                 "context_guard": context_guard,
@@ -2677,7 +2677,7 @@ def validate_answer(state: GraphState) -> GraphState:
         context_guard = _build_context_guard(dict_hint, resolved_q) # "컨텍스트 밖 수치 생성 금지" 등 경고문 생성
 
         # 3) LLM 검증 실행: 질문 + 컨텍스트 + 답변 + 가드를 전달
-        result = (_validator_prompt_25 | validator_llm | StrOutputParser()).invoke({
+        result = (_validator_prompt_25 | _as_runnable_llm(validator_llm) | StrOutputParser()).invoke({
             "input": resolved_q,
             "context": context[:15000],
             "answer": state["draft_answer"],
@@ -3086,5 +3086,3 @@ if __name__ == "__main__":
             import traceback
             traceback.print_exc()
             continue
-
-
