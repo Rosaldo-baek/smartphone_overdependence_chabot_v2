@@ -479,7 +479,7 @@ def main():
         </div>
     </div>
     """,
-    unsafe_allow_html=True,
+    unsafe_allow_html=True,)
 
     # DB 다운로드
     if not os.path.exists(LOCAL_DB_PATH) or not os.listdir(LOCAL_DB_PATH):
@@ -631,5 +631,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
