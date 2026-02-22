@@ -9,7 +9,7 @@ import streamlit as st
 import os
 import sys
 import pandas as pd
-
+from textwrap import dedent
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_chroma import Chroma
@@ -415,7 +415,7 @@ def main():
 
     # 사용자 가이드 박스
     st.markdown(
-    """
+    dedent("""
     <div class="guide-box">
         <div class="guide-title">📌 사용 안내</div>
 
@@ -428,8 +428,6 @@ def main():
             <strong>검색 팁:</strong> 아래 3가지 요소를 포함하면 정확도가 높아집니다.<br>
 
             <table style="width:100%; margin-top:8px; font-size:0.85rem; border-collapse:collapse;">
-
-                <!-- ① 연도 -->
                 <tr style="border-bottom:1px solid rgba(255,255,255,0.15);">
                     <td style="padding:6px 8px; color:#a8c5e2; width:70px;"><strong>① 연도</strong></td>
                     <td style="padding:6px 8px;">
@@ -440,7 +438,6 @@ def main():
                     </td>
                 </tr>
 
-                <!-- ② 대상 -->
                 <tr style="border-bottom:1px solid rgba(255,255,255,0.15);">
                     <td style="padding:6px 8px; color:#a8c5e2;"><strong>② 대상</strong></td>
                     <td style="padding:6px 8px;">
@@ -449,7 +446,6 @@ def main():
                     </td>
                 </tr>
 
-                <!-- ③ 지표/용어 -->
                 <tr style="border-bottom:1px solid rgba(255,255,255,0.15);">
                     <td style="padding:6px 8px; color:#a8c5e2;"><strong>③ 지표</strong></td>
                     <td style="padding:6px 8px;">
@@ -460,14 +456,12 @@ def main():
                     </td>
                 </tr>
 
-                <!-- 선택 안내 -->
                 <tr>
                     <td style="padding:6px 8px; color:#a8c5e2;"><strong>(선택)</strong></td>
                     <td style="padding:6px 8px;">
                         교차조건(성별/대상 등)이나 주제 키워드(숏폼/콘텐츠명/지표명/예방교육 등)를 추가하면 더 정확해집니다.
                     </td>
                 </tr>
-
             </table>
         </div>
 
@@ -478,7 +472,7 @@ def main():
             <a href="https://www.nia.or.kr" target="_blank">NIA 홈페이지</a>에서 원문 확인 권장<br>
         </div>
     </div>
-    """,
+    """),
     unsafe_allow_html=True,)
 
     # DB 다운로드
@@ -631,6 +625,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
