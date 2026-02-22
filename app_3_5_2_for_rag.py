@@ -251,7 +251,7 @@ def init_resources():
             "parse_year": ChatOpenAI(model="gpt-5-mini", temperature=0),
             "followup": ChatOpenAI(model="gpt-5-mini", temperature=0.2),
             "casual": ChatOpenAI(model="gpt-5-mini", temperature=0.5, max_tokens=500),
-            "main": ChatOpenAI(model="gpt-5", temperature=0.2),
+            "main": ChatOpenAI(model="gpt-5", temperature=0),
             "rewrite": ChatOpenAI(model="gpt-5-mini", temperature=0),
             "validator": ChatOpenAI(model="gpt-5", temperature=0),
         }
@@ -601,6 +601,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
