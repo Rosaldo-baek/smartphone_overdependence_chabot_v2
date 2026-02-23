@@ -48,7 +48,6 @@ RAG_DICT_PATH = 'rag_retrieval_dictionary.json'
 # =========================================================
 st.set_page_config(
     page_title="스마트폰 과의존 실태조사 분석 시스템",
-    page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -604,6 +603,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
