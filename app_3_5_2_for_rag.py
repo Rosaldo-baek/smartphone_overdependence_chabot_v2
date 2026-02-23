@@ -540,50 +540,142 @@ def main():
                 # 디버그 정보 표시
                 if debug_mode:
                     with st.expander("🔍 디버그 정보", expanded=False):
-                        col1, col2 = st.columns(2)
+                        # ========== 기본 정보 ==========
+                        st.markdown("#### 📌 기본 정보")
+                        col1, col2, col3 = st.columns(3)
 
                         with col1:
                             st.write(f"**Intent:** {result.get('intent', 'N/A')}")
-                            st.write(f"**Followup:** {result.get('followup_type', 'N/A')}")
-                            st.write(f"**Retry Count:** {result.get('retry_count', 0)}")
-                            st.write(f"**Default Years Used:** {result.get('used_default_years', False)}")
-
-                            validation_result = result.get('validation_result', 'N/A')
-                            if validation_result == "PASS":
-                                st.markdown(
-                                    f"**Validation:** <span class='validation-pass'>{validation_result}</span>",
-                                    unsafe_allow_html=True
-                                )
-                            else:
-                                st.markdown(
-                                    f"**Validation:** <span class='validation-fail'>{validation_result}</span>",
-                                    unsafe_allow_html=True
-                                )
+                            st.write(f"**Followup Type:** {result.get('followup_type', 'N/A')}")
+                            st.write(f"**Is Chat Reference:** {result.get('is_chat_reference', 'N/A')}")
 
                         with col2:
-                            if result.get("rewritten_queries"):
-                                st.write("**Rewritten Queries:**")
-                                for q in result["rewritten_queries"][:3]:
-                                    st.caption(f"• {q[:50]}...")
+                            st.write(f"**Retry Count:** {result.get('retry_count', 0)}")
+                            st.write(f"**Retry Type:** {result.get('retry_type', 'N/A')}")
+                            st.write(f"**Default Years Used:** {result.get('used_default_years', False)}")
 
-                            if result.get("retrieval"):
-                                st.write(f"**검색 파일:** {result['retrieval'].get('files_searched', [])}")
-                                st.write(f"**문서 수:** {result['retrieval'].get('doc_count', 0)}")
-
-                            if result.get("plan"):
-                                st.write(f"**검색 연도:** {result['plan'].get('years', [])}")
-
-                            if result.get("validation_reason"):
-                                st.write(f"**Validation Reason:** {result['validation_reason'][:100]}")
-
+                        with col3:
+                            validation_result = result.get('validation_result', 'N/A')
+                            if validation_result == "PASS":
+                                st.markdown(f"**Validation:** <span class='validation-pass'>{validation_result}</span>", unsafe_allow_html=True)
+                            else:
+                                st.markdown(f"**Validation:** <span class='validation-fail'>{validation_result}</span>", unsafe_allow_html=True)
                             st.write(f"**Safety:** passed={result.get('safety_passed', 'N/A')}")
 
-                            if result.get("dict_hint"):
-                                dh = result["dict_hint"]
-                                st.write(f"**Dict Hint - Topic:** {dh.get('topic_code', 'N/A')}")
-                                st.write(f"**Dict Hint - Target:** {dh.get('target_group', 'N/A')}")
-                                st.write(f"**Anchors:** {dh.get('anchor_terms', [])}")
+                        # ========== 검색 계획 ==========
+                        st.markdown("---")
+                        st.markdown("#### 🎯 검색 계획 (Plan)")
+                        if result.get("plan"):
+                            plan = result["plan"]
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                st.write(f"**검색 연도:** {plan.get('years', [])}")
+                                st.write(f"**파일 필터:** {len(plan.get('file_name_filters', []))}개")
+                                for fn in plan.get('file_name_filters', []):
+                                    st.caption(f"  └ {fn}")
+                            with col2:
+                                st.write(f"**Resolved Question:**")
+                                st.caption(plan.get('resolved_question', 'N/A')[:150])
 
+                        # ========== 쿼리 정보 ==========
+                        st.markdown("---")
+                        st.markdown("#### 🔧 쿼리 정보")
+                        if result.get("rewritten_queries"):
+                            queries = result["rewritten_queries"]
+                            st.write(f"**Rewritten Queries ({len(queries)}개):**")
+                            for i, q in enumerate(queries, 1):
+                                st.caption(f"  {i}. {q}")
+                        
+                        # 연도별 쿼리 매핑
+                        debug_info = result.get("debug_info") or {}
+                        if debug_info.get("year_query_map"):
+                            st.write("**연도별 쿼리 매핑:**")
+                            for year, year_queries in debug_info["year_query_map"].items():
+                                st.caption(f"  {year}년: {len(year_queries)}개 쿼리")
+
+                        # ========== 검색 결과 ==========
+                        st.markdown("---")
+                        st.markdown("#### 📚 검색 결과")
+                        if result.get("retrieval"):
+                            retrieval = result["retrieval"]
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                st.write(f"**총 문서 수:** {retrieval.get('doc_count', 0)}")
+                                st.write(f"**Parent IDs:** {len(retrieval.get('parent_ids', []))}개")
+                            with col2:
+                                st.write(f"**검색된 파일:**")
+                                for fn in retrieval.get('files_searched', []):
+                                    st.caption(f"  └ {fn}")
+                        
+                        # 연도별 문서 분포 (핵심 디버그 정보)
+                        if debug_info.get("year_doc_distribution"):
+                            st.write("**⭐ 연도별 문서 분포:**")
+                            dist = debug_info["year_doc_distribution"]
+                            cols = st.columns(len(dist))
+                            for i, (year, count) in enumerate(sorted(dist.items())):
+                                with cols[i]:
+                                    color = "🟢" if count >= 3 else "🟡" if count >= 1 else "🔴"
+                                    st.metric(f"{year}년", f"{color} {count}개")
+
+                        # ========== Dict Hint ==========
+                        st.markdown("---")
+                        st.markdown("#### 📖 Dict Hint")
+                        if result.get("dict_hint"):
+                            dh = result["dict_hint"]
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                st.write(f"**Topic Code:** {dh.get('topic_code', 'N/A')}")
+                                st.write(f"**Target Group:** {dh.get('target_group', 'N/A')}")
+                            with col2:
+                                st.write(f"**Anchor Terms:** {dh.get('anchor_terms', [])}")
+                                st.write(f"**Avoid Terms:** {dh.get('avoid_terms', [])}")
+                                if dh.get("scope_warnings"):
+                                    st.write(f"**⚠️ Scope Warnings:** {dh.get('scope_warnings', [])}")
+
+                        # ========== Validation 상세 ==========
+                        st.markdown("---")
+                        st.markdown("#### ✅ Validation 상세")
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            if result.get("validation_reason"):
+                                st.write(f"**Validation Reason:**")
+                                st.caption(result['validation_reason'][:200])
+                            
+                            # Validator 오버라이드 정보
+                            if debug_info.get("validator_override"):
+                                override = debug_info["validator_override"]
+                                st.warning(f"**⚡ Validator Override:**\n"
+                                          f"원래 결과: {override.get('original', 'N/A')}\n"
+                                          f"이유: {override.get('reason', 'N/A')}")
+                        
+                        with col2:
+                            # Scope Warnings (debug_info에서)
+                            if debug_info.get("scope_warnings"):
+                                st.write("**Scope Warnings:**")
+                                for warn in debug_info["scope_warnings"]:
+                                    st.caption(f"  ⚠️ {warn}")
+                            
+                            if result.get("validator_output"):
+                                vo = result["validator_output"]
+                                if vo.get("corrected_answer"):
+                                    st.write("**Corrected Answer 존재:** Yes")
+
+                        # ========== 기타 디버그 정보 ==========
+                        if debug_info:
+                            other_keys = [k for k in debug_info.keys() 
+                                         if k not in ["year_query_map", "year_doc_distribution", 
+                                                      "validator_override", "scope_warnings",
+                                                      "sanitized_has_extracted"]]
+                            if other_keys:
+                                st.markdown("---")
+                                st.markdown("#### 🔧 기타 디버그 정보")
+                                for key in other_keys:
+                                    val = debug_info[key]
+                                    if isinstance(val, dict):
+                                        st.write(f"**{key}:**")
+                                        st.json(val)
+                                    else:
+                                        st.write(f"**{key}:** {val}")
                 # 세션 상태 업데이트
                 st.session_state.messages.append({"role": "assistant", "content": final_answer})
                 st.session_state.chat_history.append(HumanMessage(content=prompt))
@@ -603,6 +695,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
