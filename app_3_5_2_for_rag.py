@@ -408,7 +408,7 @@ guide_html = """
 def main():
     from textwrap import dedent  # 표준라이브러리라 requirements 추가 불필요
 
-    st.title("📊 스마트폰 과의존 실태조사 분석 시스템")
+    st.title("스마트폰 과의존 실태조사 분석 시스템")
 
     # 사이드바
     with st.sidebar:
@@ -603,6 +603,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
