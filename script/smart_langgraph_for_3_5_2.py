@@ -301,7 +301,7 @@ def build_rag_dict_index(rag_dict: dict) -> dict:
     h06 = h_rules.get("rule_H06_본문_vs_통계표_데이터_범위", {})
     idx['body_vs_appendix'] = h06.get("implication_for_rag", {})
     
-    return idx    return idx
+    return idx
 
 
 # =========================================================
@@ -2941,4 +2941,5 @@ def build_graph(node_functions):
 
     memory = MemorySaver()
     return workflow.compile(checkpointer=memory)
+
 
