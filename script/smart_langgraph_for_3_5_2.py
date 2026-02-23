@@ -1,5 +1,3 @@
-
-
 # =========================================================
 # 스마트폰 과의존 실태조사 RAG 챗봇 - LangGraph 모듈
 # 
@@ -46,14 +44,14 @@ YEAR_TO_FILENAME = {
 }
 ALLOWED_FILES = list(YEAR_TO_FILENAME.values())
 
-# 검색 파라미터 (기본값 / 재시도용)
-DEFAULT_K_PER_QUERY = 10
-DEFAULT_TOP_PARENTS = 30
-DEFAULT_TOP_PARENTS_PER_FILE = 5
+# 검색 파라미터 (기본값 / 재시도용) - 개선: 다중 연도 검색 성능 향상
+DEFAULT_K_PER_QUERY = 12          # 10 → 12 (쿼리당 검색 수 증가)
+DEFAULT_TOP_PARENTS = 40          # 30 → 40 (전체 parent 수 증가)
+DEFAULT_TOP_PARENTS_PER_FILE = 8  # 5 → 8 (파일당 최소 문서 수 증가)
 
-RETRY_K_PER_QUERY = 15
-RETRY_TOP_PARENTS = 20
-RETRY_TOP_PARENTS_PER_FILE = 7
+RETRY_K_PER_QUERY = 18            # 15 → 18
+RETRY_TOP_PARENTS = 25            # 20 → 25
+RETRY_TOP_PARENTS_PER_FILE = 10   # 7 → 10
 
 MAX_CHUNKS_PER_PARENT = 15
 MAX_CHARS_PER_DOC = 20000
@@ -1998,20 +1996,50 @@ True 또는 False만 출력
 
             all_docs.sort(key=lambda d: d.metadata.get("_final_score", 0), reverse=True)
 
-            # Parent ID 선정
+            # Parent ID 선정 (개선: 파일/연도별 균등 배분 강화)
             parent_ids = []
             seen_pid = set()
+            
+            # ★ 개선: 연도(파일)별 최소 문서 수 보장
+            plan = state.get("plan") or {}
+            years = plan.get("years", [])
+            min_per_file = max(3, top_parents_per_file)  # 최소 3개로 상향
+            
+            # 다중 연도(4개 이상)인 경우 연도별 균등 배분 더욱 강화
+            if len(years) >= 4:
+                min_per_file = max(4, top_parents_per_file)
 
             if target_files:
+                # 1차: 각 파일에서 최소 min_per_file개씩 확보
                 for fn in target_files:
+                    file_count = 0
                     for doc in all_docs:
-                        if doc.metadata.get("_source_file") == fn or doc.metadata.get("file_name") == fn:
+                        if file_count >= min_per_file:
+                            break
+                        src_file = doc.metadata.get("_source_file") or doc.metadata.get("file_name", "")
+                        # 파일명 매칭 (정확 매칭 또는 부분 매칭)
+                        if fn == src_file or fn in src_file or src_file in fn:
                             pid = doc.metadata.get("parent_id")
                             if pid and pid not in seen_pid:
                                 parent_ids.append(pid)
                                 seen_pid.add(pid)
-                                break
+                                file_count += 1
+                
+                # 디버그: 연도별 문서 수 기록
+                state.setdefault("debug_info", {})
+                year_doc_counts = {}
+                for fn in target_files:
+                    year_match = re.search(r'(20[2][0-4])', fn)
+                    if year_match:
+                        yr = year_match.group(1)
+                        count = sum(1 for pid in parent_ids 
+                                   for doc in all_docs 
+                                   if doc.metadata.get("parent_id") == pid 
+                                   and yr in (doc.metadata.get("file_name") or ""))
+                        year_doc_counts[yr] = count
+                state["debug_info"]["year_doc_distribution"] = year_doc_counts
 
+            # 2차: 나머지 슬롯 채우기 (top_parents까지)
             for doc in all_docs:
                 if len(parent_ids) >= top_parents:
                     break
