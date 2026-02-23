@@ -1,5 +1,18 @@
 
 
+# =========================================================
+# 스마트폰 과의존 실태조사 RAG 챗봇 - LangGraph 모듈
+# 
+# 파일명: smart_langgraph.py
+# 용도: LangGraph 기반 RAG 파이프라인 핵심 로직
+# 
+# 주요 구성:
+# 1. GraphState 정의
+# 2. RAG Dictionary 인덱싱 및 힌트 추론
+# 3. 환각 방지 가드 함수
+# 4. 노드 함수 팩토리 (create_node_functions)
+# 5. 그래프 빌드 함수 (build_graph)
+# =========================================================
 
 from __future__ import annotations
 import json
@@ -1015,20 +1028,24 @@ True 또는 False만 출력
          "원본 질문: {resolved_question}\n원본 쿼리: {queries}\n연도: {years}\n\nJSON:")
     ])
 
-    # 답변 생성 프롬프트
+    # 답변 생성 프롬프트 (개선: 맥락 분리 규칙 추가)
     _answer_prompt_25 = ChatPromptTemplate.from_messages([
-    ("system",
-     "스마트폰 과의존 실태조사 보고서 분석 시스템입니다.\n\n"
-     "원칙:\n"
-     "1. CONTEXT에서 수치 인용 필수\n"
-     "2. 모든 연도별 수치(각 줄) 끝에 반드시 출처 표기: (파일명.pdf p.00)\n"
-     "   - 예: 2020: 27.3% (2020년_...pdf p.65)\n"
-     "3. 변화량(%p) 명시(가능할 때)\n"
-     "4. CONTEXT에 없으면 '검색 결과에 포함되지 않았습니다' + (없음) 사유를 간단히 명시\n\n"
-     "{context_guard}"
-    ),
-    ("human",
-     "[질문]\n{input}\n\n[CONTEXT]\n{context}\n\n답변:")
+        ("system",
+         "스마트폰 과의존 실태조사 보고서 분석 시스템입니다.\n\n"
+         "원칙:\n"
+         "1. CONTEXT에서 수치 인용 필수\n"
+         "2. 출처(파일명 p.페이지) 필수\n"
+         "3. 변화량(%p) 명시\n"
+         "4. CONTEXT에 없으면 '검색 결과에 포함되지 않았습니다' 명시\n\n"
+         "⚠️ [맥락 분리 규칙 - 매우 중요]\n"
+         "- 현재 질문에서 요청한 지표/대상/연도에만 집중하십시오.\n"
+         "- 이전 대화에서 언급된 다른 지표를 현재 질문에 끼워넣지 마십시오.\n"
+         "- 예: 현재 질문이 '숏폼 이용률'이면 숏폼 이용률만 답하고, '과의존률 확인 불가' 등 불필요한 언급 금지.\n"
+         "- 질문에 명시되지 않은 지표/주제는 답변에서 제외하십시오.\n\n"
+         "{context_guard}"
+        ),
+        ("human",
+         "[질문]\n{input}\n\n[CONTEXT]\n{context}\n\n답변:")
     ])
 
     # 답변 재시도 프롬프트
@@ -1046,15 +1063,21 @@ True 또는 False만 출력
          "[질문]\n{input}\n\n[CONTEXT]\n{context}\n\n수정된 답변:")
     ])
 
-    # 검증 프롬프트
+    # 검증 프롬프트 (개선: PASS 기준 명확화, 보수적 판정 완화)
     _validator_prompt_25 = ChatPromptTemplate.from_messages([
         ("system",
-         "답변 품질 검수기입니다.\n\n"
-         "분류:\n"
-         "- PASS: 양호\n"
-         "- FAIL_NO_EVIDENCE: 근거 부족 (검색 재시도 필요)\n"
-         "- FAIL_UNCLEAR: 질문 불명확 (명확화 필요)\n"
-         "- FAIL_FORMAT: 형식 문제 (재작성 필요)\n\n"
+         "답변 품질 검수기입니다. **기본값은 PASS입니다.**\n\n"
+         "[PASS 기준 - 아래 중 하나라도 충족하면 PASS]\n"
+         "1. 답변에 수치(%, 비율)가 1개 이상 포함됨\n"
+         "2. 답변에 출처 형식(p.숫자 또는 페이지)이 1개 이상 포함됨\n"
+         "3. 질문에 대해 '검색 결과에 포함되지 않았습니다'라고 명확히 응답함\n"
+         "4. 답변이 50자 이상이고 질문 주제와 관련됨\n\n"
+         "[FAIL 기준 - 아래 경우에만 FAIL]\n"
+         "- FAIL_NO_EVIDENCE: 답변이 20자 미만이거나, 완전히 빈 응답\n"
+         "- FAIL_UNCLEAR: 질문 자체가 해석 불가능 (예: 단어만 입력)\n"
+         "- FAIL_FORMAT: 답변이 질문과 전혀 무관한 주제를 다룸\n\n"
+         "⚠️ **중요**: 수치가 있고 질문 주제와 관련되면 무조건 PASS하십시오.\n"
+         "모호한 경우 PASS로 판정하십시오.\n\n"
          "{context_guard}\n\n"
          "JSON: {{\"result\": \"PASS|FAIL_...\", \"reason\": \"...\", "
          "\"clarify_question\": \"...\", \"corrected_answer\": \"...\"}}"
@@ -1531,7 +1554,6 @@ True 또는 False만 출력
 
             state['draft_answer'] = answer
             state['final_answer'] = answer
-            state['formatted_answer'] = answer
 
             state['debug_info']['respond_meta'] = {
                 "used_chain": "meta_chain",
@@ -1808,14 +1830,11 @@ True 또는 False만 출력
             resolved_q = plan.get("resolved_question", "")
             years = plan.get("years", [])
 
-            # 멀티연도 쿼리 추가
-            if len(years) > 1:
-                base_query_clean = re.sub(r'20[2][0-4]년?', '', resolved_q).strip()
-                for y in years:
-                    year_query = f"{y}년 {base_query_clean}"
-                    if year_query not in queries:
-                        queries.append(year_query)
+            # 연도 제거한 기본 쿼리 (연도별 쿼리 생성용)
+            base_query_clean = re.sub(r'20[2][0-4]년?', '', resolved_q).strip()
+            base_query_clean = re.sub(r'\s+', ' ', base_query_clean)
 
+            # LLM 리라이트
             result = (_rewrite_prompt_25 | rewrite_llm | StrOutputParser()).invoke({
                 "resolved_question": resolved_q,
                 "queries": str(queries),
@@ -1832,15 +1851,38 @@ True 또는 False만 출력
             if not isinstance(rewritten, list) or not rewritten:
                 rewritten = queries
 
+            # 중복 제거
             unique_queries = list(dict.fromkeys(rewritten))
+
+            # ★ 핵심 수정: 멀티연도일 때 연도별 쿼리 강제 추가 (리라이트 결과와 별개로)
+            if len(years) > 1:
+                year_specific_queries = []
+                for y in years:
+                    year_query = f"{y}년 {base_query_clean}"
+                    if year_query not in unique_queries:
+                        year_specific_queries.append(year_query)
+                # 연도별 쿼리를 앞에 배치 (우선순위 높게)
+                unique_queries = year_specific_queries + unique_queries
 
             dict_hint = state.get("dict_hint") or {}
             anchors = dict_hint.get("anchor_terms", [])
             if anchors:
                 unique_queries = augment_queries_with_anchors(unique_queries, anchors)
 
-            state["rewritten_queries"] = unique_queries[:6]
-            state["plan"]["queries"] = unique_queries[:6]
+            # 쿼리 수 제한 (연도별 쿼리 + 일반 쿼리)
+            max_queries = max(6, len(years) + 2)
+            state["rewritten_queries"] = unique_queries[:max_queries]
+            state["plan"]["queries"] = unique_queries[:max_queries]
+            
+            # 연도별 쿼리 매핑 저장 (retrieve에서 활용)
+            year_query_map = {}
+            for y in years:
+                year_queries = [q for q in unique_queries if str(y) in q]
+                if year_queries:
+                    year_query_map[y] = year_queries
+            state.setdefault("debug_info", {})
+            state["debug_info"]["year_query_map"] = year_query_map
+            
             return state
 
         except Exception as e:
@@ -1872,6 +1914,11 @@ True 또는 False만 출력
 
             all_docs = []
             files_searched = []
+            
+            # 헬퍼: 파일명에서 연도 추출
+            def _extract_year_from_filename(filename: str) -> int:
+                m = re.search(r'(20[2][0-4])', filename)
+                return int(m.group(1)) if m else 0
 
             if target_files:
                 for fn in target_files:
@@ -1882,8 +1929,26 @@ True 또는 False만 출력
 
                     file_docs = []
                     seen_keys = set()
-
+                    
+                    # ★ 파일 연도 추출 및 쿼리 우선순위 지정
+                    file_year = _extract_year_from_filename(fn)
+                    
+                    # 연도 매칭 쿼리 우선, 그 다음 일반 쿼리
+                    year_matched_queries = []
+                    general_queries = []
                     for q in queries:
+                        if file_year and str(file_year) in q:
+                            year_matched_queries.append(q)
+                        elif not re.search(r'20[2][0-4]', q):
+                            # 연도가 없는 일반 쿼리
+                            general_queries.append(q)
+                    
+                    # 우선순위: 연도 매칭 쿼리 > 일반 쿼리 > 나머지
+                    prioritized_queries = year_matched_queries + general_queries
+                    if not prioritized_queries:
+                        prioritized_queries = queries  # 폴백
+
+                    for q in prioritized_queries:
                         if not q:
                             continue
                         try:
@@ -2045,11 +2110,20 @@ True 또는 False만 출력
             return state
 
     def extract_key_figures(state: GraphState) -> GraphState:
-        """다중 연도 핵심 수치를 사전 추출한다."""
+        """다중 연도 핵심 수치를 사전 추출한다. (3개년 이상일 때만 실행)"""
         plan = state.get("plan") or {}
         years = plan.get("years", [])
-
-        if len(years) <= 1:
+        
+        # 속도 최적화: 2개년 이하면 스킵 (기존: 1개년 이하)
+        # 2개년 비교는 일반 답변 생성으로 충분
+        if len(years) <= 2:
+            return state
+        
+        # 추가 스킵 조건: 간단한 질문 패턴 감지
+        resolved_q = (state.get("resolved_question") or state.get("input", "")).strip()
+        simple_patterns = ["알려줘", "뭐야", "얼마", "몇 %", "몇%", "어때"]
+        is_simple = len(resolved_q) < 30 or any(p in resolved_q for p in simple_patterns)
+        if is_simple and len(years) <= 3:
             return state
 
         context = (state.get("compressed_context") or state.get("context", ""))
@@ -2282,6 +2356,21 @@ True 또는 False만 출력
             if validation_result not in valid_results:
                 validation_result = "PASS"
 
+            # 추가: draft_answer에 수치/출처가 있으면 FAIL을 PASS로 오버라이드
+            draft = state.get("draft_answer", "")
+            has_numbers = bool(re.search(r'\d+\.?\d*\s*%', draft))  # 수치(%) 포함 여부
+            has_source = bool(re.search(r'p\.\s*\d+|페이지\s*\d+|\d+페이지', draft))  # 출처 포함 여부
+            has_meaningful_content = len(draft) > 80  # 충분한 길이
+            
+            if validation_result.startswith("FAIL") and (has_numbers or has_source) and has_meaningful_content:
+                # 수치나 출처가 있고 충분한 내용이 있으면 실제로는 유효한 답변
+                state.setdefault("debug_info", {})
+                state["debug_info"]["validator_override"] = {
+                    "original": validation_result,
+                    "reason": f"수치:{has_numbers}, 출처:{has_source}, 길이:{len(draft)}"
+                }
+                validation_result = "PASS"
+
             state["validation_result"] = validation_result
             state["validation_reason"] = validator_out.get("reason", "")
 
@@ -2303,8 +2392,13 @@ True 또는 False만 출력
                 dict_hint
             )
 
-            if scope_issues and validation_result == "PASS":
-                state["validation_reason"] = "; ".join(scope_issues)
+            # PASS일 때는 scope_issues를 별도 필드에 저장 (validation_reason 덮어쓰지 않음)
+            if scope_issues:
+                state.setdefault("debug_info", {})
+                state["debug_info"]["scope_warnings"] = scope_issues
+                # PASS가 아닌 경우에만 reason에 기록
+                if validation_result != "PASS":
+                    state["validation_reason"] = "; ".join(scope_issues)
 
             return state
 
@@ -2491,6 +2585,4 @@ def build_graph(node_functions):
     workflow.add_edge("generate_retry", "generate")
 
     memory = MemorySaver()
-
     return workflow.compile(checkpointer=memory)
-
