@@ -1822,6 +1822,64 @@ True 또는 False만 출력
     def query_rewrite(state: GraphState) -> GraphState:
         """검색 쿼리를 LLM으로 최적화한다."""
         status_callback("🔧 쿼리 최적화 중...")
+        
+        # ========== 헬퍼 함수: 쿼리 정제 ==========
+        def _clean_query(q: str) -> str:
+            """쿼리에서 불완전한 패턴 제거"""
+            noise_patterns = [
+                r'부터\s*까지',              # "부터 까지" (연도 파싱 실패 잔재)
+                r'에\s*대해\s*부터',          # "에 대해 부터"
+                r'조사결과를?\s*찾아주세요',   # 요청문 잔재
+                r'알려주세요',
+                r'찾아주세요',
+                r'분석해주세요',
+                r'에\s*대해\s*$',             # 문장 끝 "에 대해"
+                r'에\s*대한\s*$',
+            ]
+            result = q
+            for pattern in noise_patterns:
+                result = re.sub(pattern, '', result)
+            # 연속 공백 정리
+            result = re.sub(r'\s+', ' ', result).strip()
+            return result
+        
+        # ========== 헬퍼 함수: 복합 지표 분리 ==========
+        def _split_compound_queries(queries: list, resolved_q: str, years: list) -> list:
+            """복합 지표 질문을 개별 쿼리로 분리"""
+            # 복합 지표 패턴 (원본 키워드, 검색용 변형들)
+            compound_indicators = [
+                ("예방교육률", ["예방교육 경험률", "예방교육 경험 비율", "예방교육 경험"]),
+                ("예방교육 경험", ["예방교육 경험률", "예방교육 경험 비율"]),
+                ("교육도움", ["교육 도움 정도", "교육 도움이 된다", "도움 정도"]),
+                ("교육 도움", ["교육 도움 정도", "도움이 된다"]),
+                ("도움 정도", ["도움이 된다", "도움된다"]),
+            ]
+            
+            expanded = list(queries)  # 복사본
+            target = ""
+            
+            # resolved_q에서 대상 추출
+            for t in ["성인", "청소년", "유아동", "60대"]:
+                if t in resolved_q:
+                    target = t
+                    break
+            
+            # 복합 지표가 포함되어 있으면 분리된 쿼리 추가
+            for indicator, synonyms in compound_indicators:
+                if indicator in resolved_q:
+                    for y in years:
+                        # 지표별 개별 쿼리 생성
+                        base = f"{y}년 {target} {indicator}".strip()
+                        if base not in expanded:
+                            expanded.append(base)
+                        # 동의어 쿼리도 추가
+                        for syn in synonyms[:2]:  # 동의어는 2개까지만
+                            syn_query = f"{y}년 {target} {syn}".strip()
+                            if syn_query not in expanded:
+                                expanded.append(syn_query)
+            
+            return list(dict.fromkeys(expanded))  # 중복 제거
+        
         try:
             plan = state["plan"]
             queries = plan.get("queries", [])
@@ -1831,6 +1889,8 @@ True 또는 False만 출력
             # 연도 제거한 기본 쿼리 (연도별 쿼리 생성용)
             base_query_clean = re.sub(r'20[2][0-4]년?', '', resolved_q).strip()
             base_query_clean = re.sub(r'\s+', ' ', base_query_clean)
+            # ★ 기본 쿼리도 정제
+            base_query_clean = _clean_query(base_query_clean)
 
             # LLM 리라이트
             result = (_rewrite_prompt_25 | rewrite_llm | StrOutputParser()).invoke({
@@ -1852,6 +1912,10 @@ True 또는 False만 출력
             # 중복 제거
             unique_queries = list(dict.fromkeys(rewritten))
 
+            # ★ 쿼리 정제: 불완전한 패턴 제거
+            unique_queries = [_clean_query(q) for q in unique_queries]
+            unique_queries = [q for q in unique_queries if q and len(q) >= 5]
+
             # ★ 핵심 수정: 멀티연도일 때 연도별 쿼리 강제 추가 (리라이트 결과와 별개로)
             if len(years) > 1:
                 year_specific_queries = []
@@ -1862,13 +1926,17 @@ True 또는 False만 출력
                 # 연도별 쿼리를 앞에 배치 (우선순위 높게)
                 unique_queries = year_specific_queries + unique_queries
 
+            # ★ 복합 지표 분리 (예방교육률 + 교육도움 → 각각 쿼리)
+            if any(kw in resolved_q for kw in ["예방교육", "교육도움", "교육 도움", "도움 정도"]):
+                unique_queries = _split_compound_queries(unique_queries, resolved_q, years)
+
             dict_hint = state.get("dict_hint") or {}
             anchors = dict_hint.get("anchor_terms", [])
             if anchors:
                 unique_queries = augment_queries_with_anchors(unique_queries, anchors)
 
-            # 쿼리 수 제한 (연도별 쿼리 + 일반 쿼리)
-            max_queries = max(6, len(years) + 2)
+            # 쿼리 수 제한 (연도별 쿼리 + 일반 쿼리) - 복합 지표 시 더 많이 허용
+            max_queries = max(8, len(years) * 2 + 2)
             state["rewritten_queries"] = unique_queries[:max_queries]
             state["plan"]["queries"] = unique_queries[:max_queries]
             
