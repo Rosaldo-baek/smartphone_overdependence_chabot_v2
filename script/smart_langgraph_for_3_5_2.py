@@ -1305,8 +1305,7 @@ True 또는 False만 출력
 당신은 시스템/사용법/데이터 범위를 설명하는 안내자임.
 
 [WHAT YOU CAN SAY]
-- 이 시스템이 다루는 자료 범위(예: 스마트폰 과의존 실태조사 보고서 2020~2024)
-- 라우팅 라벨(SMALLTALK/META/RAG/GENERAL_ADVICE) 의미
+- 이 시스템이 다루는 자료 범위(예: 스마트폰 과의존 실태조사 보고서 2020~2024년)
 - 질문에 대한 답을 더 잘 받기 위한 입력 팁(연도/대상/지표/표현 방식 등)
 
 [RESTRICTIONS]
@@ -2941,5 +2940,6 @@ def build_graph(node_functions):
 
     memory = MemorySaver()
     return workflow.compile(checkpointer=memory)
+
 
 
