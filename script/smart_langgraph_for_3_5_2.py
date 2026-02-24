@@ -1,5 +1,6 @@
 
 
+
 from __future__ import annotations
 import json
 import re
@@ -683,6 +684,8 @@ def infer_dict_hint(text: str, context_text: str = "", rag_dict_index: dict = No
 def augment_queries_with_anchors(queries: list, anchor_terms: list, max_extra: int = 2) -> list:
     """
     이미 만들어진 쿼리 리스트에 anchor_terms를 덧붙여 추가 쿼리를 생성한다.
+    긴 쿼리(원본 질문 전체)에는 anchor를 붙이지 않음.
+    짧은 키워드 쿼리(30자 이하)에만 anchor를 추가하여 무의미한 쿼리 생성 방지.
     """
     if not isinstance(queries, list):
         return queries
@@ -697,10 +700,19 @@ def augment_queries_with_anchors(queries: list, anchor_terms: list, max_extra: i
         if s and s not in out:
             out.append(s)
     
+    # [개선] 짧은 쿼리에만 anchor 추가 (30자 이하)
+    # 원본 질문 전체에 anchor를 붙이는 무의미한 패턴 방지
+    MAX_QUERY_LEN_FOR_ANCHOR = 30
+    
     extra_added = 0
     for q in list(out):
         if extra_added >= max_extra:
             break
+        
+        # [개선] 쿼리가 너무 길면 anchor 추가 생략
+        if len(q) > MAX_QUERY_LEN_FOR_ANCHOR:
+            continue
+            
         add = " ".join(anchors[:2])
         cand = f"{q} {add}".strip()
         if len(cand) >= 6 and cand not in out:
@@ -1305,7 +1317,7 @@ True 또는 False만 출력
 당신은 시스템/사용법/데이터 범위를 설명하는 안내자임.
 
 [WHAT YOU CAN SAY]
-- 이 시스템이 다루는 자료 범위(예: 스마트폰 과의존 실태조사 보고서 2020~2024년)
+- 이 시스템이 다루는 자료 범위(예: 스마트폰 과의존 실태조사 보고서 2020~2024)
 - 질문에 대한 답을 더 잘 받기 위한 입력 팁(연도/대상/지표/표현 방식 등)
 
 [RESTRICTIONS]
@@ -1399,9 +1411,39 @@ True 또는 False만 출력
     # 쿼리 리라이트 프롬프트
     _rewrite_prompt_25 = ChatPromptTemplate.from_messages([
         ("system",
-         "검색 쿼리 최적화 전문가입니다.\n"
-         "불필요한 조사/어미 제거, 핵심 키워드 추출, 동의어 확장.\n"
-         "JSON: {{\"optimized_queries\": [\"쿼리1\", \"쿼리2\", ...]}}"
+     "검색 쿼리 최적화 전문가입니다.\n\n"
+     "═══════════════════════════════════════════\n"
+     "[절대 규칙 — 반드시 준수]\n"
+     "═══════════════════════════════════════════\n"
+     "1. 쿼리 길이: 각 쿼리는 반드시 30자 이내 (핵심 키워드 2~6개)\n"
+     "2. 원본 금지: 원본 질문 전체를 그대로 사용하거나 단어만 추가하는 것 금지\n"
+     "3. 중복 금지: 의미가 동일한 쿼리 반복 금지\n"
+     "4. 조사 제거: '에 대해', '를', '과', '및', '~해주세요' 등 조사/어미 제거\n\n"
+     "═══════════════════════════════════════════\n"
+     "[쿼리 구성 규칙]\n"
+     "═══════════════════════════════════════════\n"
+     "필수 구성요소 (우선순위 순):\n"
+     "  ① 연도 (있으면 포함)\n"
+     "  ② 핵심 대상 (target_group 또는 과의존위험군/일반사용자군)\n"
+     "  ③ 핵심 지표 (anchor_terms 활용)\n"
+     "  ④ 세부 조건 (있을 경우만)\n\n"
+     "쿼리 슬롯별 역할:\n"
+     "  - 쿼리1: [연도] + [대상] + [핵심지표]\n"
+     "  - 쿼리2: [연도] + [비교대상] + [핵심지표]\n"
+     "  - 쿼리3: [핵심지표] + [동의어/유사어]\n"
+     "  - 쿼리4~: [연도별 분리] 또는 [세부조건 추가]\n\n"
+     "═══════════════════════════════════════════\n"
+     "[anchor_terms 활용 규칙]\n"
+     "═══════════════════════════════════════════\n"
+     "- anchor_terms가 제공되면 반드시 쿼리에 1개 이상 포함\n"
+     "- anchor_terms는 검색 정확도를 높이는 핵심 키워드임\n"
+     "- avoid_terms가 있으면 해당 단어는 쿼리에서 제외\n\n"
+     "═══════════════════════════════════════════\n"
+     "[출력 형식]\n"
+     "═══════════════════════════════════════════\n"
+     "JSON: {{\"optimized_queries\": [\"쿼리1\", \"쿼리2\", ...]}}\n"
+     "- 쿼리 개수: 4~8개\n"
+     "- 각 쿼리: 30자 이내"
         ),
         ("human",
          "원본 질문: {resolved_question}\n원본 쿼리: {queries}\n연도: {years}\n\nJSON:")
@@ -1441,12 +1483,22 @@ True 또는 False만 출력
     # 검증 프롬프트
     _validator_prompt_25 = ChatPromptTemplate.from_messages([
         ("system",
-         "답변 품질 검수기입니다.\n\n"
-         "분류:\n"
-         "- PASS: 양호\n"
-         "- FAIL_NO_EVIDENCE: 근거 부족 (검색 재시도 필요)\n"
-         "- FAIL_UNCLEAR: 질문 불명확 (명확화 필요)\n"
-         "- FAIL_FORMAT: 형식 문제 (재작성 필요)\n\n"
+     "답변 품질 검수기입니다.\n\n"
+     "[판정 기준 — 매우 중요]\n"
+     "1. PASS: 답변의 핵심 수치/정보가 CONTEXT에 존재하면 PASS\n"
+     "   - 출처 페이지 번호가 정확히 일치하지 않아도, 수치 자체가 CONTEXT에 있으면 PASS\n"
+     "   - 출처 표기 형식이 다소 다르더라도 내용적으로 문제가 맞으면 PASS\n"
+     "   - 수치를 올바르게 인용했으나 페이지 번호만 다르면 PASS (출처 형식은 부차적)\n\n"
+     "2. FAIL_NO_EVIDENCE: CONTEXT에 관련 정보가 전혀 없을 때만 사용\n"
+     "   - 답변이 CONTEXT에 없는 수치를 '만들어낸' 경우\n"
+     "   - 질문과 관련된 데이터가 CONTEXT에 전혀 포함되지 않은 경우\n"
+     "   - ★ 출처 페이지 번호 불일치만으로는 FAIL_NO_EVIDENCE 판정 금지\n\n"
+     "3. FAIL_UNCLEAR: 질문 자체가 불명확하여 답변 불가능한 경우\n\n"
+     "4. FAIL_FORMAT: 출처 미표기, 형식 오류 등 (수치가 맞지만 형식만 문제인 경우)\n\n"
+     "[핵심 원칙]\n"
+     "- 수치의 정확성이 가장 중요함. 출처의 표기방식은 부차적.\n"
+     "- CONTEXT에 수치가 존재하고 답변이 이를 올바르게 인용했으면 PASS.\n"
+     "- 의심스러울 때는 PASS 쪽으로 판정 (과도한 리트라이 방지).\n\n"
          "{context_guard}\n\n"
          "JSON: {{\"result\": \"PASS|FAIL_...\", \"reason\": \"...\", "
          "\"clarify_question\": \"...\", \"corrected_answer\": \"...\"}}"
@@ -2114,6 +2166,25 @@ True 또는 False만 출력
                     year_query = f"{y}년 {base_query_clean}"
                     if year_query not in queries:
                         queries.append(year_query)
+            # [개선] dict_hint에서 정보 추출하여 프롬프트에 전달
+            target_group = dict_hint.get("target_group", "") or ""
+            anchor_terms = dict_hint.get("anchor_terms", []) or []
+            avoid_terms = dict_hint.get("avoid_terms", []) or []
+            
+            # anchor_terms와 avoid_terms를 문자열로 변환
+            anchor_str = ", ".join(anchor_terms) if anchor_terms else "없음"
+            avoid_str = ", ".join(avoid_terms) if avoid_terms else "없음"
+            target_str = target_group if target_group else "전체"
+
+            # LLM 기반 최적화 수행 - dict_hint 정보 포함
+            result = (_rewrite_prompt_25 | rewrite_llm | StrOutputParser()).invoke({
+                "resolved_question": resolved_q,
+                "years": str(years),
+                "target_group": target_str,      # [신규] 대상 그룹
+                "anchor_terms": anchor_str,       # [신규] 핵심 키워드
+                "avoid_terms": avoid_str,         # [신규] 제외 키워드
+                })
+
 
             # LLM 기반 최적화 수행
             result = (_rewrite_prompt_25 | rewrite_llm | StrOutputParser()).invoke({
@@ -2940,6 +3011,5 @@ def build_graph(node_functions):
 
     memory = MemorySaver()
     return workflow.compile(checkpointer=memory)
-
 
 
