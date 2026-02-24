@@ -1452,13 +1452,35 @@ True 또는 False만 출력
     # 답변 생성 프롬프트
     _answer_prompt_25 = ChatPromptTemplate.from_messages([
     ("system",
-     "스마트폰 과의존 실태조사 보고서 분석 시스템입니다.\n\n"
-     "원칙:\n"
-     "1. CONTEXT에서 수치 인용 필수\n"
-     "2. 모든 연도별 수치(각 줄) 끝에 반드시 출처 표기: (파일명.pdf p.00)\n"
-     "   - 예: 2020: 27.3% (2020년_...pdf p.65)\n"
-     "3. 변화량(%p) 명시(가능할 때)\n"
-     "4. CONTEXT에 없으면 '검색 결과에 포함되지 않았습니다' + (없음) 사유를 간단히 명시\n\n"
+     "당신은 **스마트폰 과의존 실태조사 보고서 분석 전문 어시스턴트**입니다.\n"
+     "단순히 데이터를 나열하는 것이 아니라, 전문가처럼 분석하고 인사이트를 제공합니다.\n\n"
+     "═══════════════════════════════════════════\n"
+     "[답변 구조 — 반드시 준수]\n"
+     "═══════════════════════════════════════════\n\n"
+     "**1. 요약 (1~2문장)**\n"
+     "- 질문에 대한 핵심 결론을 먼저 제시\n"
+     "- 가장 중요한 수치 또는 트렌드 언급\n\n"
+     "**2. 상세 데이터**\n"
+     "- 관련 수치를 체계적으로 정리\n"
+     "- 비교가 필요한 경우 표 형식 또는 구조화된 목록 사용\n"
+     "- 모든 수치 끝에 출처 표기: (파일명.pdf p.00)\n\n"
+     "**3. 분석 포인트 (간단 해석)**\n"
+     "- 수치가 의미하는 바를 1~3문장으로 해석\n"
+     "- 집단 간 차이, 변화 추이, 주목할 점 등 언급\n"
+     "- 변화량(%p)이 있으면 명시\n\n"
+     "═══════════════════════════════════════════\n"
+     "[수치 정확성 규칙 — 절대 준수]\n"
+     "═══════════════════════════════════════════\n"
+     "1. CONTEXT에 있는 수치만 인용 (추론/계산 금지)\n"
+     "2. 출처 형식: (파일명.pdf p.00)\n"
+     "3. CONTEXT에 없는 정보: '해당 데이터는 검색 결과에 포함되지 않았습니다' 명시\n\n"
+     "═══════════════════════════════════════════\n"
+     "[문체 가이드]\n"
+     "═══════════════════════════════════════════\n"
+     "- 전문적이면서도 이해하기 쉬운 표현 사용\n"
+     "- '~입니다', '~됩니다' 등 존댓말 사용\n"
+     "- 불필요한 서론/인사 없이 바로 본론으로\n"
+     "- 단순 나열보다 의미 있는 비교와 해석 제공하되 없는 내용을 만들지 말 것\n\n"
      "{context_guard}"
     ),
     ("human",
@@ -2215,20 +2237,38 @@ True 또는 False만 출력
                         break
             
             # 부족한 연도에 쿼리 추가
+            MAX_BASE_QUERY_LEN = 30
+
+            if len(base_query_clean) > MAX_BASE_QUERY_LEN:
+                # 핵심 키워드 추출 (dict_hint 기반)
+                keywords = extract_keywords_from_dict(resolved_q, rag_dict_index, dict_hint)
+                # anchor_terms 우선 사용
+                if anchor_terms:
+                    short_base = " ".join(anchor_terms[:3])
+                elif keywords:
+                    short_base = " ".join(keywords[:3])
+                else:
+                    # 최후의 수단: base_query_clean에서 앞 30자만
+                    short_base = base_query_clean[:MAX_BASE_QUERY_LEN].rsplit(' ', 1)[0]
+            else:
+                short_base = base_query_clean
+
             for y in years:
                 deficit = MIN_QUERIES_PER_YEAR - year_query_count[y]
+                # [개선] 이미 1개 이상 있으면 추가 보완 최소화
+                if year_query_count[y] >= 1:
+                    deficit = min(deficit, 1)  # 최대 1개만 추가
+    
                 for i in range(deficit):
                     if i == 0:
-                        new_query = f"{y}년 {base_query_clean}"
+                        new_query = f"{y}년 {short_base}"
                     else:
-                        # RAG Dictionary 기반 키워드 활용
                         keywords = extract_keywords_from_dict(resolved_q, rag_dict_index, dict_hint)
                         kw_str = " ".join(keywords[:2])
                         new_query = f"{y}년 {kw_str}"
-                    
+        
                     if new_query not in unique_queries:
                         unique_queries.append(new_query)
-
             # 앵커 용어로 쿼리 보강
             anchors = dict_hint.get("anchor_terms", [])
             if anchors:
