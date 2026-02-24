@@ -1531,26 +1531,34 @@ True 또는 False만 출력
 
     # 핵심 수치 추출 프롬프트
     EXTRACT_FIGURES_PROMPT = ChatPromptTemplate.from_messages([
-        ("system",
-         "당신은 통계 보고서에서 핵심 수치만 정확히 발췌하는 추출기입니다.\n\n"
-         "[절대 규칙]\n"
-         "1. 컨텍스트에 명시된 수치만 발췌하십시오. 추론·보간·반올림 금지.\n"
-         "2. 해당 수치가 컨텍스트에 없으면 반드시 'N/A'로 표기하십시오.\n"
-         "3. 출력은 JSON만 허용. 설명·사족 금지.\n\n"
-         "[출력 형식]\n"
-         "{{\n"
-         '  "연도별_수치": [\n'
-         '    {{"연도": 2020, "전체": "XX.X%", "유아동": "XX.X%", "청소년": "XX.X%", "성인": "XX.X%", "60대": "XX.X%"}},\n'
-         '    ...\n'
-         "  ]\n"
-         "}}\n\n"
-         "각 필드에는 '과의존위험군 비율(%)' 수치를 기입하십시오.\n"
-         "컨텍스트에 해당 연도·대상의 수치가 없으면 'N/A'를 기입하십시오."
-        ),
-        ("human",
-         "[추출 대상 질문]\n{resolved_question}\n\n"
-         "[컨텍스트]\n{context}\n\n"
-         "JSON:")
+    ("system",
+     "당신은 통계 보고서에서 핵심 수치만 정확히 발췌하는 추출기입니다.\n\n"
+     "[절대 규칙]\n"
+     "1. 컨텍스트에 명시된 수치만 발췌하십시오. 추론·보간·반올림 금지.\n"
+     "2. 해당 수치가 컨텍스트에 없으면 반드시 'N/A'로 표기하십시오.\n"
+     "3. 출력은 JSON만 허용. 설명·사족 금지.\n\n"
+     "[핵심 원칙]\n"
+     "질문이 요구하는 지표를 먼저 파악하고, 해당 지표의 연도별 수치를 추출하십시오.\n"
+     "- 질문이 '과의존률/위험군 비율'을 묻는 경우 → 과의존위험군 비율(%) 추출\n"
+     "- 질문이 '이용률/이용 비율'을 묻는 경우 → 해당 서비스 이용률(%) 추출\n"
+     "- 질문이 '이용시간/이용정도'를 묻는 경우 → 이용시간 또는 이용정도 점수 추출\n"
+     "- 질문이 특정 행태(숏폼, SNS, 게임 등)를 묻는 경우 → 해당 행태 관련 수치 추출\n"
+     "- 그 외 → 질문 맥락에서 핵심 지표를 판단하여 추출\n\n"
+     "[출력 형식]\n"
+     "{{\n"
+     '  "추출_지표": "질문에서 파악한 핵심 지표명",\n'
+     '  "연도별_수치": [\n'
+     '    {{"연도": 2020, "전체": "값", "유아동": "값", "청소년": "값", "성인": "값", "60대": "값"}},\n'
+     '    ...\n'
+     "  ]\n"
+     "}}\n\n"
+     "※ 질문이 특정 대상만 묻는 경우(예: 성인만), 해당 대상 필드만 채우고 나머지는 'N/A'로 표기.\n"
+     "※ 컨텍스트에 해당 연도·대상의 수치가 없으면 'N/A'를 기입하십시오."
+    ),
+    ("human",
+     "[추출 대상 질문]\n{resolved_question}\n\n"
+     "[컨텍스트]\n{context}\n\n"
+     "JSON:")
     ])
 
 
@@ -2112,8 +2120,8 @@ True 또는 False만 출력
             resolved_q = resolved_q.strip()
 
             # [개선] 연도별 쿼리 보장
-            base_query_clean = re.sub(r'20[2][0-4]년?\s*', '', resolved_q).strip()
-            base_query_clean = re.sub(r'20[2][0-4]~?20[2][0-4]년?\s*', '', base_query_clean).strip()
+            base_query_clean = re.sub(r'20[2][0-4]년(?:과|의|에|도|은|이|를|부터|까지)?\s*', '', resolved_q).strip()
+            base_query_clean = re.sub(r'20[2][0-4]~?20[2][0-4]년(?:의|에|도|은|이|를)?\s*', '', base_query_clean).strip()
             
             for y in years:
                 year_query = f"{y}년 {base_query_clean}"
@@ -2180,9 +2188,9 @@ True 또는 False만 출력
             dict_hint = state.get("dict_hint") or {}
 
             # [개선] 연도별 쿼리 추가 (멀티연도 시)
-            base_query_clean = re.sub(r'20[2][0-4]년?\s*', '', resolved_q).strip()
-            base_query_clean = re.sub(r'20[2][0-4]~?20[2][0-4]년?\s*', '', base_query_clean).strip()
-            
+            base_query_clean = re.sub(r'20[2][0-4]년(?:과|의|에|도|은|이|를|부터|까지)?\s*', '', resolved_q).strip()
+            base_query_clean = re.sub(r'20[2][0-4]~?20[2][0-4]년(?:의|에|도|은|이|를)?\s*', '', base_query_clean).strip()
+
             if len(years) > 1:
                 for y in years:
                     year_query = f"{y}년 {base_query_clean}"
@@ -2635,17 +2643,23 @@ True 또는 False만 출력
                     missing_years.append(yy)
 
             # [개선] 누락 연도가 있으면 타겟 재검색 수행
-            if missing_years and len(missing_years) < len(years):
-                status_callback(f"🔄 누락 연도 {missing_years} 추가 검색 중...")
-                
+            year_parent_dist = state.get("retrieval", {}).get("year_distribution", {})
+            actually_missing = [
+                y for y in missing_years 
+                if year_parent_dist.get(y, 0) < MIN_PARENTS_PER_YEAR
+                ]
+
+            if actually_missing and len(actually_missing) < len(years):
+                status_callback(f"🔄 누락 연도 {actually_missing} 추가 검색 중...")
+    
                 dict_hint = state.get("dict_hint") or {}
                 supplemental_context = targeted_year_search(
-                    missing_years, 
+                    actually_missing,  # missing_years → actually_missing
                     resolved_q,
                     vectorstore,
                     rag_dict_index,
                     dict_hint
-                )
+                    )
                 
                 if supplemental_context:
                     # 보완 컨텍스트로 재추출 시도
@@ -2915,7 +2929,7 @@ True 또는 False만 출력
 
         # 연도별 쿼리 추가
         years = state["plan"].get("years", [])
-        base_query_clean = re.sub(r'20[2][0-4]년?\s*', '', resolved_q).strip()
+        base_query_clean = re.sub(r'20[2][0-4]년(?:과|의|에|도|은|이|를|부터|까지)?\s*', '', resolved_q).strip()
         for y in years:
             year_query = f"{y}년 {base_query_clean}"
             if year_query not in expanded_queries:
