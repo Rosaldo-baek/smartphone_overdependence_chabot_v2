@@ -1,26 +1,29 @@
 # Streamlit
-streamlit>=1.28.0
+streamlit==1.32.2
 
 # LangChain Core
-langchain>=0.2.0
-langchain-core>=0.2.0
-langchain-openai>=0.1.0
-langchain-chroma>=0.1.0
+langchain==0.2.16
+langchain-core==0.2.38
+langchain-openai==0.1.23
+langchain-chroma==0.1.4
 
 # LangGraph
-langgraph>=0.2.0
+langgraph==0.2.14
 
 # Vector Store
-chromadb>=0.4.0
+chromadb==0.5.5
 
 # OpenAI
-openai>=1.0.0
+openai==1.43.0
 
-# Hugging Face (DB 다운로드용)
-huggingface_hub>=0.20.0
+# Hugging Face
+huggingface_hub==0.24.6
 
 # 데이터 처리
-pandas>=2.0.0
+pandas==2.2.2
 
 # 기타 유틸리티
-python-dotenv>=1.0.0
+python-dotenv==1.0.1
+
+# 핵심 충돌 방지
+protobuf==3.20.3
