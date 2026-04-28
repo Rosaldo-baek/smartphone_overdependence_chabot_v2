@@ -245,14 +245,14 @@ def init_resources():
         
         # LLM 설정 - 원본과 동일한 모델명 사용
         llms = {
-            "router": ChatOpenAI(model="gpt-5-mini"),
-            "chat_refer": ChatOpenAI(model="gpt-5-mini"),
-            "parse_year": ChatOpenAI(model="gpt-5-mini"),
-            "followup": ChatOpenAI(model="gpt-5-mini" ),
-            "casual": ChatOpenAI(model="gpt-5-mini"),
-            "main": ChatOpenAI(model="gpt-5-mini"),
-            "rewrite": ChatOpenAI(model="gpt-5-mini"),
-            "validator": ChatOpenAI(model="gpt-5-mini"),
+            "router": ChatOpenAI(model="gpt-4o-mini", temperature=0),
+            "chat_refer": ChatOpenAI(model="gpt-4o-mini", temperature=0),
+            "parse_year": ChatOpenAI(model="gpt-4o-mini", temperature=0),
+            "followup": ChatOpenAI(model="gpt-4o-mini", temperature=0.2),
+            "casual": ChatOpenAI(model="gpt-4o-mini", temperature=0.2),
+            "main": ChatOpenAI(model=model="gpt-4o-mini", temperature=0),
+            "rewrite": ChatOpenAI(model=model="gpt-4o-mini", temperature=0),
+            "validator": ChatOpenAI(model=model="gpt-4o-mini", temperature=0),
         }
         
         return vectorstore, llms, None
