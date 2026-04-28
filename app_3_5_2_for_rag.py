@@ -355,10 +355,15 @@ def create_status_callback(status_placeholder):
         callable: 상태 텍스트를 받아 placeholder를 업데이트하는 함수
     """
     def callback(status_text: str):
-        status_placeholder.markdown(
-            f'<div class="status-box">{status_text}</div>', 
-            unsafe_allow_html=True
-        )
+        try:
+            status_placeholder.markdown(
+                f'<div class="status-box">{status_text}</div>',
+                unsafe_allow_html=True
+            )
+        except Exception:
+            # LangGraph 스레드풀에서 실행 시 Streamlit 컨텍스트가 없으므로
+            # 상태 표시를 건너뛴다
+            pass
     return callback
 
 # 사용자 가이드 박스 (들여쓰기/개행 때문에 코드블록으로 보이는 문제 방지)
