@@ -250,9 +250,9 @@ def init_resources():
             "parse_year": ChatOpenAI(model="gpt-4o-mini", temperature=0),
             "followup": ChatOpenAI(model="gpt-4o-mini", temperature=0.2),
             "casual": ChatOpenAI(model="gpt-4o-mini", temperature=0.2),
-            "main": ChatOpenAI(model=model="gpt-4o-mini", temperature=0),
-            "rewrite": ChatOpenAI(model=model="gpt-4o-mini", temperature=0),
-            "validator": ChatOpenAI(model=model="gpt-4o-mini", temperature=0),
+            "main": ChatOpenAI(model="gpt-4o-mini", temperature=0),
+            "rewrite": ChatOpenAI(model="gpt-4o-mini", temperature=0),
+            "validator": ChatOpenAI(model="gpt-4o-mini", temperature=0),
         }
         
         return vectorstore, llms, None
