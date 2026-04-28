@@ -11,7 +11,7 @@ langchain-chroma==0.1.4
 langgraph==0.2.14
 
 # Vector Store
-chromadb==0.5.5
+chromadb==0.5.3
 
 # OpenAI
 openai==1.43.0
