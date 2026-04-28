@@ -43,13 +43,6 @@ HF_REPO_ID = "Rosaldowithbaek/smartphoe_overdependence_survey_chromadb"
 LOCAL_DB_PATH = "./chroma_db_store"
 RAG_DICT_PATH = 'rag_retrieval_dictionary.json'
 
-import chromadb
-
-# DB에 실제로 존재하는 collection 목록 확인
-client = chromadb.PersistentClient(path=LOCAL_DB_PATH)
-collections = client.list_collections()
-for col in collections:
-    print(f"Collection: {col.name}, 문서 수: {col.count()}")
 
 
 
@@ -243,17 +236,44 @@ def init_resources():
     # DB 경로 확인
     if not os.path.exists(LOCAL_DB_PATH):
         return None, None, f"Chroma DB를 찾을 수 없습니다: {LOCAL_DB_PATH}"
-    
+
     try:
-        # 임베딩 및 벡터스토어 초기화
+        # ====== DB 내 실제 collection 확인 ======
+        import chromadb
+        client = chromadb.PersistentClient(path=LOCAL_DB_PATH)
+        collections = client.list_collections()
+    
+        # 로그로 실제 collection 목록 출력 (디버그용)
+        collection_info = []
+        for col in collections:
+            collection_info.append(f"{col.name}: {col.count()}건")
+        print(f"[ChromaDB] 발견된 collections: {collection_info}")
+    
+    # collection이 하나도 없으면 에러
+        if not collections:
+            return None, None, "ChromaDB에 collection이 없습니다. DB를 재다운로드해 주세요."
+    
+        # ====== 임베딩 및 벡터스토어 초기화 ======
         embedding = OpenAIEmbeddings(model='text-embedding-3-large')
+    
+        # 지정한 collection이 실제로 존재하는지 확인
+        target_collection = "pdf_pages_with_summary_v2"
+        existing_names = [col.name for col in collections]
+    
+        if target_collection not in existing_names:
+        # 지정한 이름이 없으면, 가장 문서가 많은 collection을 자동 선택
+            best_col = max(collections, key=lambda c: c.count())
+            print(f"[ChromaDB] '{target_collection}' 없음. "
+                  f"'{best_col.name}'({best_col.count()}건) 사용")
+            target_collection = best_col.name
+    
         vectorstore = Chroma(
             persist_directory=LOCAL_DB_PATH,
             embedding_function=embedding,
-            collection_name="pdf_pages_with_summary_v2"
+            collection_name=target_collection
         )
         
-        # LLM 설정 - 원본과 동일한 모델명 사용
+    # LLM 설정
         llms = {
             "router": ChatOpenAI(model="gpt-4o-mini", temperature=0),
             "chat_refer": ChatOpenAI(model="gpt-4o-mini", temperature=0),
@@ -264,7 +284,7 @@ def init_resources():
             "rewrite": ChatOpenAI(model="gpt-4o-mini", temperature=0),
             "validator": ChatOpenAI(model="gpt-4o-mini", temperature=0),
         }
-        
+    
         return vectorstore, llms, None
     except Exception as e:
         return None, None, str(e)
