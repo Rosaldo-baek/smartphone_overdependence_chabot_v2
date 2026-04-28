@@ -43,6 +43,16 @@ HF_REPO_ID = "Rosaldowithbaek/smartphoe_overdependence_survey_chromadb"
 LOCAL_DB_PATH = "./chroma_db_store"
 RAG_DICT_PATH = 'rag_retrieval_dictionary.json'
 
+import chromadb
+
+# DB에 실제로 존재하는 collection 목록 확인
+client = chromadb.PersistentClient(path=LOCAL_DB_PATH)
+collections = client.list_collections()
+for col in collections:
+    print(f"Collection: {col.name}, 문서 수: {col.count()}")
+
+
+
 # =========================================================
 # 페이지 설정
 # =========================================================
