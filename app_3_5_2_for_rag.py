@@ -218,7 +218,6 @@ def download_chroma_db():
 @st.cache_resource
 def init_resources():
     """리소스(벡터스토어, LLM)를 초기화한다."""
-    # API 키 확인
     api_key = None
     try:
         api_key = st.secrets.get("OPENAI_API_KEY")
@@ -233,81 +232,17 @@ def init_resources():
 
     os.environ['OPENAI_API_KEY'] = api_key
 
-    # DB 경로 확인
     if not os.path.exists(LOCAL_DB_PATH):
         return None, None, f"Chroma DB를 찾을 수 없습니다: {LOCAL_DB_PATH}"
 
     try:
-        # ====== DB 내 실제 collection 확인 ======
-        import chromadb
-        client = chromadb.PersistentClient(path=LOCAL_DB_PATH)
-        collections = client.list_collections()
-
-        # 디버그: 반환 타입과 내용 확인
-        print(f"[ChromaDB] collections 타입: {type(collections)}")
-        print(f"[ChromaDB] collections 내용: {collections}")
-
-        if not collections:
-            return None, None, "ChromaDB에 collection이 없습니다."
-
-        # 각 항목의 타입에 따라 이름 목록 추출
-        sample = collections[0]
-        print(f"[ChromaDB] 첫 번째 항목 타입: {type(sample)}, 값: {sample}")
-
-        if hasattr(sample, 'name'):
-            existing_names = [col.name for col in collections]
-        elif isinstance(sample, str):
-            existing_names = list(collections)
-        else:
-            existing_names = [str(col) for col in collections]
-
-        print(f"[ChromaDB] collection 이름 목록: {existing_names}")
-
-        # ★★★ 디버그용 — collection 이름과 문서 수 확인 후 강제 반환 ★★★
-        # ★★★ 확인 후 반드시 이 블록(아래 4줄)을 삭제할 것 ★★★
-        col_info = []
-        for name in existing_names:
-            try:
-                col = client.get_collection(name)
-                col_info.append(f"{name}: {col.count()}건")
-            except:
-                col_info.append(f"{name}: 접근실패")
-        return None, None, f"[디버그] collections: {col_info}"
-        # ★★★ 디버그 블록 끝 — 여기까지 삭제 ★★★
-
-        # ====== 임베딩 및 벡터스토어 초기화 ======
         embedding = OpenAIEmbeddings(model='text-embedding-3-large')
-
-        target_collection = "pdf_pages_with_summary_v2"
-
-        if target_collection not in existing_names:
-            best_name = None
-            best_count = 0
-            for name in existing_names:
-                try:
-                    col = client.get_collection(name)
-                    cnt = col.count()
-                    print(f"[ChromaDB] '{name}': {cnt}건")
-                    if cnt > best_count:
-                        best_count = cnt
-                        best_name = name
-                except Exception as e:
-                    print(f"[ChromaDB] '{name}' 접근 실패: {e}")
-
-            if best_name:
-                print(f"[ChromaDB] '{target_collection}' 없음. "
-                      f"'{best_name}'({best_count}건) 사용")
-                target_collection = best_name
-            else:
-                return None, None, "ChromaDB에서 유효한 collection을 찾지 못했습니다."
-
         vectorstore = Chroma(
             persist_directory=LOCAL_DB_PATH,
             embedding_function=embedding,
-            collection_name=target_collection
+            collection_name="pdf_pages_with_summary_v2"
         )
 
-        # LLM 설정
         llms = {
             "router": ChatOpenAI(model="gpt-4o-mini", temperature=0),
             "chat_refer": ChatOpenAI(model="gpt-4o-mini", temperature=0),
@@ -322,6 +257,8 @@ def init_resources():
         return vectorstore, llms, None
     except Exception as e:
         return None, None, str(e)
+
+
 # =========================================================
 # 테이블 파싱 및 렌더링
 # =========================================================
