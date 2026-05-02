@@ -9,6 +9,7 @@ import streamlit as st
 import os
 import sys
 import pandas as pd
+from textwrap import dedent
 
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
@@ -24,7 +25,7 @@ if SCRIPT_DIR not in sys.path:
 # =========================================================
 # LangGraph 모듈 import
 # =========================================================
-from smart_langgraph_for_3_5_2 import (
+from smart_langgraph_for_3_5_2_v3 import (
     # 상수
     YEAR_TO_FILENAME,
     BOT_IDENTITY,
@@ -43,14 +44,12 @@ HF_REPO_ID = "Rosaldowithbaek/smartphoe_overdependence_survey_chromadb"
 LOCAL_DB_PATH = "./chroma_db_store"
 RAG_DICT_PATH = 'rag_retrieval_dictionary.json'
 
-
-
-
 # =========================================================
 # 페이지 설정
 # =========================================================
 st.set_page_config(
     page_title="스마트폰 과의존 실태조사 분석 시스템",
+    page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -218,42 +217,46 @@ def download_chroma_db():
 @st.cache_resource
 def init_resources():
     """리소스(벡터스토어, LLM)를 초기화한다."""
+    # API 키 확인
     api_key = None
     try:
         api_key = st.secrets.get("OPENAI_API_KEY")
     except:
         pass
-
+    
     if not api_key:
         api_key = os.environ.get('OPENAI_API_KEY')
-
+    
     if not api_key:
         return None, None, "OpenAI API 키가 설정되지 않았습니다."
-
+    
     os.environ['OPENAI_API_KEY'] = api_key
-
+    
+    # DB 경로 확인
     if not os.path.exists(LOCAL_DB_PATH):
         return None, None, f"Chroma DB를 찾을 수 없습니다: {LOCAL_DB_PATH}"
-
+    
     try:
+        # 임베딩 및 벡터스토어 초기화
         embedding = OpenAIEmbeddings(model='text-embedding-3-large')
         vectorstore = Chroma(
             persist_directory=LOCAL_DB_PATH,
             embedding_function=embedding,
             collection_name="pdf_pages_with_summary_v2"
         )
-
+        
+        # LLM 설정 - 원본과 동일한 모델명 사용
         llms = {
-            "router": ChatOpenAI(model="gpt-4o-mini", temperature=0),
-            "chat_refer": ChatOpenAI(model="gpt-4o-mini", temperature=0),
-            "parse_year": ChatOpenAI(model="gpt-4o-mini", temperature=0),
-            "followup": ChatOpenAI(model="gpt-4o-mini", temperature=0.2),
-            "casual": ChatOpenAI(model="gpt-4o-mini", temperature=0.2),
-            "main": ChatOpenAI(model="gpt-4o-mini", temperature=0),
-            "rewrite": ChatOpenAI(model="gpt-4o-mini", temperature=0),
-            "validator": ChatOpenAI(model="gpt-4o-mini", temperature=0),
+            "router": ChatOpenAI(model="gpt-5-mini"),
+            "chat_refer": ChatOpenAI(model="gpt-5-mini"),
+            "parse_year": ChatOpenAI(model="gpt-5-mini"),
+            "followup": ChatOpenAI(model="gpt-5-mini"),
+            "casual": ChatOpenAI(model="gpt-5-mini"),
+            "main": ChatOpenAI(model="gpt-5-mini"),
+            "rewrite": ChatOpenAI(model="gpt-5-mini"),
+            "validator": ChatOpenAI(model="gpt-5-mini"),
         }
-
+        
         return vectorstore, llms, None
     except Exception as e:
         return None, None, str(e)
@@ -354,15 +357,10 @@ def create_status_callback(status_placeholder):
         callable: 상태 텍스트를 받아 placeholder를 업데이트하는 함수
     """
     def callback(status_text: str):
-        try:
-            status_placeholder.markdown(
-                f'<div class="status-box">{status_text}</div>',
-                unsafe_allow_html=True
-            )
-        except Exception:
-            # LangGraph 스레드풀에서 실행 시 Streamlit 컨텍스트가 없으므로
-            # 상태 표시를 건너뛴다
-            pass
+        status_placeholder.markdown(
+            f'<div class="status-box">{status_text}</div>', 
+            unsafe_allow_html=True
+        )
     return callback
 
 # 사용자 가이드 박스 (들여쓰기/개행 때문에 코드블록으로 보이는 문제 방지)
@@ -391,7 +389,7 @@ guide_html = """
     <br />
     <strong>TIP</strong><br />
     • 교차조건(성별/대상 등)이나 주제 키워드(숏폼/콘텐츠명/지표명/예방교육 등)를 추가하면 더 정확해집니다.<br />
-    • 주제, 대상이 바뀌면 이전 대화 맥락이 오히려 정확한 답변에 방해가 되거나 검색이 안되는 결과로 나타날 수 있습니다. 초기화 이후 재검색하는 것을 권장합니다.<br /> 
+    • 주제, 대상이 바뀌면 이전 대화 맥락이 오히려 정확한 답변에 방해가 되거나 검색이 안되는 결과로 나타날 수 있습니다. 초기화 이후 재검색하는 것을 권장합니다. <br />
     • 과도한 검색결과 방지를 위한 설정으로 인해 일부 연도가 검색 결과에서 누락될 수 있습니다. 그럴 때는 해당 연도를 지정해서 다시 질문해주세요.<br />
     • 보고서 내 유사한 내용이 다수 있어, 검색 성능이 안나올 수 있습니다. 요구하고자하는 바를 확실히 설명해주세요<br />
   </div>
@@ -406,13 +404,12 @@ guide_html = """
 </div>
 """
 
+
 # =========================================================
 # 메인 UI
 # =========================================================
 def main():
-    from textwrap import dedent  # 표준라이브러리라 requirements 추가 불필요
-
-    st.title("스마트폰 과의존 실태조사 분석 시스템")
+    st.title("📊 스마트폰 과의존 실태조사 분석 시스템")
 
     # 사이드바
     with st.sidebar:
@@ -442,6 +439,9 @@ def main():
             st.session_state.messages = []
             st.session_state.chat_history = []
             st.session_state.clarification_context = None
+            # 캐싱된 그래프/노드도 제거하여 다음 질문 시 재생성
+            st.session_state.pop("graph", None)
+            st.session_state.pop("node_functions", None)
             st.rerun()
 
         st.divider()
@@ -449,8 +449,9 @@ def main():
         # 디버그 모드 토글
         debug_mode = st.checkbox("디버그 모드", value=False)
 
-    # 사용자 가이드 박스 
+
     st.markdown(guide_html.strip(), unsafe_allow_html=True)
+
     # DB 다운로드
     if not os.path.exists(LOCAL_DB_PATH) or not os.listdir(LOCAL_DB_PATH):
         st.info("🔄 Chroma DB를 다운로드하고 있습니다...")
@@ -502,21 +503,25 @@ def main():
                 # 상태 콜백 생성
                 status_callback = create_status_callback(status_placeholder)
 
-                # 노드 함수 생성 (smart_langgraph.py에서 import)
-                node_functions = create_node_functions(
-                    vectorstore,
-                    llms,
-                    status_callback,  # 콜백 함수 전달
-                    st.session_state.rag_dict_index
-                )
+                # 그래프를 세션 단위로 캐싱 (status_callback만 매번 갱신)
+                if "graph" not in st.session_state or "node_functions" not in st.session_state:
+                    st.session_state.node_functions = create_node_functions(
+                        vectorstore,
+                        llms,
+                        status_callback,  # 초기 콜백
+                        st.session_state.rag_dict_index
+                        )
+                    st.session_state.graph = build_graph(st.session_state.node_functions)
 
-                # 그래프 빌드 (smart_langgraph.py에서 import)
-                graph = build_graph(node_functions)
 
-                config = {"configurable": {"thread_id": "streamlit_session"}}
+
+                # status_callback은 매 턴마다 갱신 필요 (placeholder가 달라지므로)
+                st.session_state.node_functions["_status_callback_ref"][0] = status_callback
+
+                config = {"configurable": {"thread_id": "streamlit_session","recursion_limit": 50}}
 
                 # 그래프 실행
-                result = graph.invoke(
+                result = st.session_state.graph.invoke(
                     {
                         "input": prompt,
                         "chat_history": st.session_state.chat_history,
@@ -611,6 +616,33 @@ def main():
                                 for fn in retrieval.get('files_searched', []):
                                     st.caption(f"  └ {fn}")
                         
+                        # ========== 재검색 원인 분석 ==========
+                        if debug_info.get("extract_figures"):
+                            st.markdown("---")
+                            st.markdown("#### 🔄 재검색 원인 분석")
+                            ef = debug_info["extract_figures"]
+                            
+                        # 연도별 추출 상태
+                        if ef.get("year_extract_detail"):
+                            st.write("**연도별 추출 상태:**")
+                            for year, detail in ef["year_extract_detail"].items():
+                                status_icon = "✅" if not detail.get("is_missing") else "❌"
+                                docs = detail.get("docs_retrieved", 0)
+                                reason = detail.get("extraction_status", "UNKNOWN")
+                                st.caption(f"  {status_icon} {year}년: 문서 {docs}개 검색 → 추출상태: {reason}")
+    
+                        # 추가 검색 트리거 여부
+                        if ef.get("supplemental_search_triggered"):
+                            st.warning("**⚡ 추가 검색 트리거됨**")
+                            if ef.get("supplemental_search_reason"):
+                                st.json(ef["supplemental_search_reason"])
+                                
+                                # Missing 이유
+                                if debug_info.get("missing_years_reason"):
+                                    st.write("**Missing 판정 이유:**")
+                                    for year, reason in debug_info["missing_years_reason"].items():
+                                        st.caption(f"  - {year}년: {reason}")
+                        
                         # 연도별 문서 분포 (핵심 디버그 정보)
                         if debug_info.get("year_doc_distribution"):
                             st.write("**⭐ 연도별 문서 분포:**")
@@ -667,7 +699,7 @@ def main():
                         # ========== 기타 디버그 정보 ==========
                         if debug_info:
                             other_keys = [k for k in debug_info.keys() 
-                                         if k not in ["year_query_map", "year_doc_distribution", 
+                                         if k not in ["year_query_map","extract_figures","year_doc_distribution", 
                                                       "validator_override", "scope_warnings",
                                                       "sanitized_has_extracted"]]
                             if other_keys:
@@ -680,6 +712,7 @@ def main():
                                         st.json(val)
                                     else:
                                         st.write(f"**{key}:** {val}")
+
                 # 세션 상태 업데이트
                 st.session_state.messages.append({"role": "assistant", "content": final_answer})
                 st.session_state.chat_history.append(HumanMessage(content=prompt))
@@ -699,29 +732,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
