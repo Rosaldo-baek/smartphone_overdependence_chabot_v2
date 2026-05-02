@@ -1,6 +1,5 @@
 
 
-
 from __future__ import annotations
 import json
 import re
@@ -56,7 +55,7 @@ MAX_DOCS_PER_YEAR_IN_CONTEXT = 5  # 컨텍스트 내 연도당 최대 문서 수
 MAX_CHUNKS_PER_PARENT = 15
 MAX_CHARS_PER_DOC = 20000
 SUMMARY_TYPES = ['page_summary', 'table_summary']
-MAX_RETRY_COUNT = 3
+MAX_RETRY_COUNT = 1
 
 BOT_IDENTITY = """**2020~2024년 스마트폰 과의존 실태조사 보고서 분석 시스템**
 
@@ -154,19 +153,6 @@ def load_rag_dict(rag_dict_path: str = 'rag_retrieval_dictionary.json') -> dict:
     except Exception as e:
         logger.warning(f"RAG Dictionary 로딩 실패: {e}")
     return {}
-
-#
-CROSS_ANALYSIS_PATTERNS = {
-    "appendix_only": [
-        (["유아동", "청소년", "성인", "60대"], ["과의존위험군", "일반사용자군"]),
-        (["초등학생", "중학생", "고등학생","대학생"], ["과의존위험군", "일반사용자군"]),
-        (["남성", "여성", "고등학생"], ["과의존위험군", "일반사용자군"]),
-        (["대도시", "중소도시", "읍/면지역"], ["과의존위험군", "일반사용자군"])
-        
-    ],
-    "total_only_in_main": ["고위험군", "잠재적위험군"],
-}
-
 
 
 def build_rag_dict_index(rag_dict: dict) -> dict:
@@ -684,8 +670,6 @@ def infer_dict_hint(text: str, context_text: str = "", rag_dict_index: dict = No
 def augment_queries_with_anchors(queries: list, anchor_terms: list, max_extra: int = 2) -> list:
     """
     이미 만들어진 쿼리 리스트에 anchor_terms를 덧붙여 추가 쿼리를 생성한다.
-    긴 쿼리(원본 질문 전체)에는 anchor를 붙이지 않음.
-    짧은 키워드 쿼리(30자 이하)에만 anchor를 추가하여 무의미한 쿼리 생성 방지.
     """
     if not isinstance(queries, list):
         return queries
@@ -700,19 +684,10 @@ def augment_queries_with_anchors(queries: list, anchor_terms: list, max_extra: i
         if s and s not in out:
             out.append(s)
     
-    # [개선] 짧은 쿼리에만 anchor 추가 (30자 이하)
-    # 원본 질문 전체에 anchor를 붙이는 무의미한 패턴 방지
-    MAX_QUERY_LEN_FOR_ANCHOR = 30
-    
     extra_added = 0
     for q in list(out):
         if extra_added >= max_extra:
             break
-        
-        # [개선] 쿼리가 너무 길면 anchor 추가 생략
-        if len(q) > MAX_QUERY_LEN_FOR_ANCHOR:
-            continue
-            
         add = " ".join(anchors[:2])
         cand = f"{q} {add}".strip()
         if len(cand) >= 6 and cand not in out:
@@ -763,95 +738,6 @@ def build_context_guard(
     
     return "\n".join(lines) if lines else ""
 
-def detect_cross_analysis_need(
-    query: str,
-    context: str,
-    dict_hint: dict,
-    rag_dict_index: dict  # [신규] 파라미터 추가
-) -> Dict[str, Any]:
-    """JSON 기반으로 교차분석 필요 여부 감지"""
-    
-    result = {
-        "needs_appendix": False,
-        "cross_type": None,
-        "target_group": None,
-        "cross_condition": None,
-        "reason": None,
-        "retrieval_hint": None,  # [신규]
-    }
-    
-    # [신규] JSON에서 배너 구조 로드
-    banner_hierarchy = rag_dict_index.get("banner_hierarchy", {})
-    cross_rules = rag_dict_index.get("cross_analysis_rules", {})
-    high_risk_rule = rag_dict_index.get("high_risk_segmentation_rule", {})
-    
-    # B3_연령대별에서 카테고리 추출
-    b3 = banner_hierarchy.get("B3_연령대별", {})
-    target_groups = b3.get("categories", ["유아동", "청소년", "성인", "60대"])
-    target_sub_rows = b3.get("per_category_sub_rows", ["전체", "과의존위험군", "일반사용자군"])
-    
-    # B5_학령별에서 카테고리 추출
-    b5 = banner_hierarchy.get("B5_학령별", {})
-    grade_groups = b5.get("categories", ["초등학생", "중학생", "고등학생", "대학생"])
-    
-    # B2_과의존수준별에서 세분화 가능 항목 추출
-    b2 = banner_hierarchy.get("B2_과의존수준별", {})
-    b2_sub_rows = b2.get("sub_rows", ["과의존위험군", "고위험군", "잠재적위험군", "일반사용자군"])
-    
-    # [신규] 고위험군/잠재적위험군은 B2(전체)에서만 존재
-    high_risk_only_in_b2 = ["고위험군", "잠재적위험군"]
-    
-    query_lower = query.lower()
-    
-    # 1. 연령대/학령 + 고위험군/잠재적위험군 조합 요청 감지
-    found_target = next((tg for tg in target_groups if tg in query), None)
-    found_grade = next((gg for gg in grade_groups if gg in query), None)
-    found_high_risk = any(hr in query for hr in high_risk_only_in_b2)
-    
-    if (found_target or found_grade) and found_high_risk:
-        target = found_target or found_grade
-        result["cross_type"] = "high_risk_by_target"
-        result["target_group"] = target
-        result["cross_condition"] = "고위험군/잠재적위험군"
-        result["needs_appendix"] = False  # 부록에도 없음
-        result["reason"] = high_risk_rule.get("detail", 
-            f"고위험군/잠재적위험군 세분화는 전체(B2) 기준에서만 존재. '{target}' 내 세분화 없음")
-        result["retrieval_hint"] = "DATA_NOT_EXIST"  # [신규] 데이터 자체가 없음 표시
-        return result
-    
-    # 2. 배너 간 교차 요청 감지 (성별×연령대 등)
-    prohibited = cross_rules.get("prohibited_combinations", [])
-    # JSON에서 금지 조합 패턴 파싱하여 매칭
-    for combo in prohibited:
-        # 예: "성별 × 연령대별 (예: '남성 청소년의 과의존위험군 비율')"
-        if "성별" in combo and "연령대" in combo:
-            gender_found = any(g in query for g in ["남성", "여성", "남자", "여자"])
-            target_found = any(t in query for t in target_groups)
-            if gender_found and target_found:
-                result["cross_type"] = "gender_target_cross"
-                result["needs_appendix"] = False
-                result["reason"] = "성별×연령대별 교차 데이터는 통계표에 존재하지 않음"
-                result["retrieval_hint"] = "DATA_NOT_EXIST"
-                return result
-    
-    # 3. 연령대/학령 × 과의존여부별 교차 (부록에 존재)
-    overdep_conditions = ["과의존위험군", "일반사용자군", "과의존여부", "위험군별"]
-    found_overdep = any(od in query for od in overdep_conditions)
-    
-    if (found_target or found_grade) and found_overdep:
-        target = found_target or found_grade
-        result["cross_type"] = "target_overdep"
-        result["target_group"] = target
-        result["cross_condition"] = "과의존여부별"
-        
-        # 컨텍스트에 해당 교차 데이터가 있는지 확인
-        cross_pattern = rf"{target}.*?(과의존위험군|일반사용자군).*?\d"
-        if not re.search(cross_pattern, context, re.IGNORECASE):
-            result["needs_appendix"] = True
-            result["reason"] = f"'{target}' 내 과의존여부별 데이터가 본문에서 확인되지 않음. 부록 통계표 검색 필요"
-            result["retrieval_hint"] = "SEARCH_APPENDIX"
-    
-    return result
 
 
 def detect_scope_mismatch(answer: str, context: str, dict_hint: dict) -> List[str]:
@@ -968,7 +854,12 @@ def create_node_functions(vectorstore, llms, status_callback, rag_dict_index):
     Returns:
         dict: 노드 이름 → 노드 함수 매핑
     """
+    # status_callback을 리스트로 감싸서 간접 참조 (그래프 캐싱 시 외부에서 교체 가능)
+    _callback_ref = [status_callback]
     
+    def _status(msg: str):
+        _callback_ref[0](msg)
+        
     # LLM 참조
     router_llm = llms["router"]
     chat_refer_llm = llms["chat_refer"]
@@ -1053,7 +944,7 @@ True 또는 False만 출력하세요.
 
 [OUTPUT FORMAT — 매우 중요]
 - 출력은 반드시 아래 정규식과 '완전히 동일'해야 합니다(문자열 전체 매칭).
-  ^{{"years":\[(?:\d{{4}}(?:,\d{{4}})*)?\]\}}$
+  ^{{"years":\\[(?:\\d{{4}}(?:,\\d{{4}})*)?\\]\\}}$
 - 즉, 출력은 아래 예시처럼 JSON 1개만 허용됩니다.
   {{"years":[2022,2023,2024]}}
   {{"years":[]}}
@@ -1126,9 +1017,12 @@ D) 필터링(반드시)
 - years_set에서 AVAILABLE_YEARS에 없는 연도는 모두 제거
 
 E) 상대 범위 교정(필수)
+- 2단계(범위 추출)에서 범위가 1개라도 발견되었으면 has_primary_range = true, 
+  primary_range = 해당 범위의 연도 집합으로 설정한다.
 - has_primary_range = true 이면,
   years_set = years_set ∩ primary_range 를 반드시 수행한다
   (즉, primary_range 밖 연도는 이미 들어있어도 최종적으로 제거해야 한다)
+- 범위가 발견되지 않았으면 has_primary_range = false 이며, 이 단계는 건너뛴다.
 
 F) 후처리
 - years_set을 오름차순으로 정렬한 years_list 생성
@@ -1206,30 +1100,6 @@ curr: {curr}
 질문 한 문장만 출력하세요.
 """.strip()
 
-    # 개인 기억 질문 판정 프롬프트
-    personal_memory_prompt = """
-[역할]
-당신은 사용자 질문이 '사용자 본인에 대한 정보/자기소개/이전 발화'를 기억하는지 확인하는 질문인지 판정하는 이진 분류기입니다.
-
-[입력]
-- context: 이전 대화 전문
-- curr: 현재 사용자 질문
-
-[True(해당) 예시]
-- "제가 누구라고요?"
-- "제 이름 기억하나요?"
-- "제가 뭐 한다고 했죠?"
-- "아까 내가 뭐라고 말했지?"
-- "내 직업/소속/나이 기억해?"
-
-[False(비해당) 예시]
-- 보고서 수치/추이/비율/분석 요청
-- 시스템/데이터 범위/작동방식 질문
-- 일반 조언 요청
-
-[출력]
-True 또는 False만 출력
-""".strip()
 
     # 라우터 프롬프트
     router_prompt = ChatPromptTemplate.from_messages([
@@ -1275,6 +1145,10 @@ True 또는 False만 출력
          "Q: 청소년이 스마트폰을 너무 오래 쓰는데 어떻게 지도해야 해?\nA: GENERAL_ADVICE\n\n"
          "Q: 2025년 과의존률도 알려줘\nA: RAG\n"
          "=== END ===\n\n"
+         "5) 이전 대화에서 보고서 데이터를 다뤘고, 현재 질문이 그 맥락의 연속인 경우\n"
+         "   (예: '그렇게 해주세요', '최근 기준으로', '네', '해줘', '알려줘' 등\n"
+         "    짧은 지시/동의/조건변경) 무조건 RAG입니다.\n"
+         "   이런 질문을 SMALLTALK이나 META로 분류하지 마십시오.\n"
          "주의: 반드시 라벨명만 출력."
         ),
         MessagesPlaceholder(variable_name="chat_history"),
@@ -1411,39 +1285,9 @@ True 또는 False만 출력
     # 쿼리 리라이트 프롬프트
     _rewrite_prompt_25 = ChatPromptTemplate.from_messages([
         ("system",
-     "검색 쿼리 최적화 전문가입니다.\n\n"
-     "═══════════════════════════════════════════\n"
-     "[절대 규칙 — 반드시 준수]\n"
-     "═══════════════════════════════════════════\n"
-     "1. 쿼리 길이: 각 쿼리는 반드시 30자 이내 (핵심 키워드 2~6개)\n"
-     "2. 원본 금지: 원본 질문 전체를 그대로 사용하거나 단어만 추가하는 것 금지\n"
-     "3. 중복 금지: 의미가 동일한 쿼리 반복 금지\n"
-     "4. 조사 제거: '에 대해', '를', '과', '및', '~해주세요' 등 조사/어미 제거\n\n"
-     "═══════════════════════════════════════════\n"
-     "[쿼리 구성 규칙]\n"
-     "═══════════════════════════════════════════\n"
-     "필수 구성요소 (우선순위 순):\n"
-     "  ① 연도 (있으면 포함)\n"
-     "  ② 핵심 대상 (target_group 또는 과의존위험군/일반사용자군)\n"
-     "  ③ 핵심 지표 (anchor_terms 활용)\n"
-     "  ④ 세부 조건 (있을 경우만)\n\n"
-     "쿼리 슬롯별 역할:\n"
-     "  - 쿼리1: [연도] + [대상] + [핵심지표]\n"
-     "  - 쿼리2: [연도] + [비교대상] + [핵심지표]\n"
-     "  - 쿼리3: [핵심지표] + [동의어/유사어]\n"
-     "  - 쿼리4~: [연도별 분리] 또는 [세부조건 추가]\n\n"
-     "═══════════════════════════════════════════\n"
-     "[anchor_terms 활용 규칙]\n"
-     "═══════════════════════════════════════════\n"
-     "- anchor_terms가 제공되면 반드시 쿼리에 1개 이상 포함\n"
-     "- anchor_terms는 검색 정확도를 높이는 핵심 키워드임\n"
-     "- avoid_terms가 있으면 해당 단어는 쿼리에서 제외\n\n"
-     "═══════════════════════════════════════════\n"
-     "[출력 형식]\n"
-     "═══════════════════════════════════════════\n"
-     "JSON: {{\"optimized_queries\": [\"쿼리1\", \"쿼리2\", ...]}}\n"
-     "- 쿼리 개수: 4~8개\n"
-     "- 각 쿼리: 30자 이내"
+         "검색 쿼리 최적화 전문가입니다.\n"
+         "불필요한 조사/어미 제거, 핵심 키워드 추출, 동의어 확장.\n"
+         "JSON: {{\"optimized_queries\": [\"쿼리1\", \"쿼리2\", ...]}}"
         ),
         ("human",
          "원본 질문: {resolved_question}\n원본 쿼리: {queries}\n연도: {years}\n\nJSON:")
@@ -1452,37 +1296,19 @@ True 또는 False만 출력
     # 답변 생성 프롬프트
     _answer_prompt_25 = ChatPromptTemplate.from_messages([
     ("system",
-     "당신은 **스마트폰 과의존 실태조사 보고서 분석 전문 어시스턴트**입니다.\n"
-     "단순히 데이터를 나열하는 것이 아니라, 전문가처럼 분석하고 인사이트를 제공합니다.\n\n"
-     "═══════════════════════════════════════════\n"
-     "[답변 구조 — 반드시 준수]\n"
-     "═══════════════════════════════════════════\n\n"
-     "**1. 요약 (1~2문장)**\n"
-     "- 질문에 대한 핵심 결론을 먼저 제시\n"
-     "- 가장 중요한 수치 또는 트렌드 언급\n\n"
-     "**2. 상세 데이터**\n"
-     "- 관련 수치를 체계적으로 정리\n"
-     "- 비교가 필요한 경우 표 형식 또는 구조화된 목록 사용\n"
-     "- 모든 수치 끝에 출처 표기: (파일명.pdf p.00)\n\n"
-     "**3. 분석 포인트 (간단 해석)**\n"
-     "- 수치가 의미하는 바를 1~3문장으로 해석\n"
-     "- 집단 간 차이, 변화 추이, 주목할 점 등 언급\n"
-     "- 변화량(%p)이 있으면 명시\n\n"
-     "═══════════════════════════════════════════\n"
-     "[수치 정확성 규칙 — 절대 준수]\n"
-     "═══════════════════════════════════════════\n"
-     "1. CONTEXT에 있는 수치만 인용 (추론/계산 금지)\n"
-     "2. 출처 형식: (파일명.pdf p.00)\n"
-     "3. CONTEXT에 없는 정보: '해당 데이터는 검색 결과에 포함되지 않았습니다' 명시\n\n"
-     "═══════════════════════════════════════════\n"
-     "[문체 가이드]\n"
-     "═══════════════════════════════════════════\n"
-     "- 전문적이면서도 이해하기 쉬운 표현 사용\n"
-     "- '~입니다', '~됩니다' 등 존댓말 사용\n"
-     "- 불필요한 서론/인사 없이 바로 본론으로\n"
-     "- 단순 나열보다 의미 있는 비교와 해석 제공하되 없는 내용을 만들지 말 것\n\n"
+     "스마트폰 과의존 실태조사 보고서(2020~2024) 분석 시스템입니다.\n"
+     "당신은 보고서 원문을 벡터 검색하여 관련 페이지를 자동으로 찾아 답변합니다.\n"
+     "사용자에게 '자료를 제공해 달라'거나 '원문을 업로드해 달라'고 요청하지 마십시오.\n\n"
+     "원칙:\n"
+     "1. CONTEXT에서 수치 인용 필수\n"
+     "2. 수치 인용 시 출처 표기: (파일명.pdf p.00)\n"
+     "3. 변화량(%p) 명시(가능할 때)\n"
+     "4. CONTEXT에 해당 정보가 없으면 '검색 결과에서 확인되지 않았습니다'로 간결히 명시\n"
+     "   - 관련 없는 페이지를 하나하나 나열하지 말 것\n"
+     "   - '확인되지 않았습니다' 한 문장으로 충분\n"
+     "5. 찾은 정보가 있으면 해당 내용에 집중하여 정리할 것\n\n"
      "{context_guard}"
-    ),
+     ),
     ("human",
      "[질문]\n{input}\n\n[CONTEXT]\n{context}\n\n답변:")
     ])
@@ -1490,37 +1316,30 @@ True 또는 False만 출력
     # 답변 재시도 프롬프트
     _answer_retry_prompt_25 = ChatPromptTemplate.from_messages([
         ("system",
-         "스마트폰 과의존 실태조사 보고서 분석 시스템입니다.\n\n"
-         "⚠️ 이전 문제: {previous_issue}\n\n"
-         "수정 지침:\n"
-         "1. 모든 수치에 출처 형식: (파일명.pdf p.00)\n"
-         "2. CONTEXT에서 직접 인용만\n"
-         "3. 없는 정보는 '포함되지 않았습니다' 명시\n\n"
-         "{context_guard}"
-        ),
-        ("human",
-         "[질문]\n{input}\n\n[CONTEXT]\n{context}\n\n수정된 답변:")
-    ])
+     "스마트폰 과의존 실태조사 보고서(2020~2024) 분석 시스템입니다.\n"
+     "당신은 보고서 원문을 벡터 검색하여 관련 페이지를 자동으로 찾아 답변합니다.\n"
+     "사용자에게 자료 제공이나 업로드를 요청하지 마십시오.\n\n"
+     "⚠️ 이전 문제: {previous_issue}\n\n"
+     "수정 지침:\n"
+     "1. 수치에 출처 형식: (파일명.pdf p.00)\n"
+     "2. CONTEXT에서 직접 인용만\n"
+     "3. 없는 정보는 '확인되지 않았습니다' 한 문장으로 간결히\n"
+     "4. 관련 없는 페이지를 나열하지 말 것\n\n"
+     "{context_guard}"
+    ),
+    ("human",
+     "[질문]\n{input}\n\n[CONTEXT]\n{context}\n\n수정된 답변:")
+])
 
     # 검증 프롬프트
     _validator_prompt_25 = ChatPromptTemplate.from_messages([
         ("system",
-     "답변 품질 검수기입니다.\n\n"
-     "[판정 기준 — 매우 중요]\n"
-     "1. PASS: 답변의 핵심 수치/정보가 CONTEXT에 존재하면 PASS\n"
-     "   - 출처 페이지 번호가 정확히 일치하지 않아도, 수치 자체가 CONTEXT에 있으면 PASS\n"
-     "   - 출처 표기 형식이 다소 다르더라도 내용적으로 문제가 맞으면 PASS\n"
-     "   - 수치를 올바르게 인용했으나 페이지 번호만 다르면 PASS (출처 형식은 부차적)\n\n"
-     "2. FAIL_NO_EVIDENCE: CONTEXT에 관련 정보가 전혀 없을 때만 사용\n"
-     "   - 답변이 CONTEXT에 없는 수치를 '만들어낸' 경우\n"
-     "   - 질문과 관련된 데이터가 CONTEXT에 전혀 포함되지 않은 경우\n"
-     "   - ★ 출처 페이지 번호 불일치만으로는 FAIL_NO_EVIDENCE 판정 금지\n\n"
-     "3. FAIL_UNCLEAR: 질문 자체가 불명확하여 답변 불가능한 경우\n\n"
-     "4. FAIL_FORMAT: 출처 미표기, 형식 오류 등 (수치가 맞지만 형식만 문제인 경우)\n\n"
-     "[핵심 원칙]\n"
-     "- 수치의 정확성이 가장 중요함. 출처의 표기방식은 부차적.\n"
-     "- CONTEXT에 수치가 존재하고 답변이 이를 올바르게 인용했으면 PASS.\n"
-     "- 의심스러울 때는 PASS 쪽으로 판정 (과도한 리트라이 방지).\n\n"
+         "답변 품질 검수기입니다.\n\n"
+         "분류:\n"
+         "- PASS: 양호\n"
+         "- FAIL_NO_EVIDENCE: 근거 부족 (검색 재시도 필요)\n"
+         "- FAIL_UNCLEAR: 질문 불명확 (명확화 필요)\n"
+         "- FAIL_FORMAT: 형식 문제 (재작성 필요)\n\n"
          "{context_guard}\n\n"
          "JSON: {{\"result\": \"PASS|FAIL_...\", \"reason\": \"...\", "
          "\"clarify_question\": \"...\", \"corrected_answer\": \"...\"}}"
@@ -1531,34 +1350,26 @@ True 또는 False만 출력
 
     # 핵심 수치 추출 프롬프트
     EXTRACT_FIGURES_PROMPT = ChatPromptTemplate.from_messages([
-    ("system",
-     "당신은 통계 보고서에서 핵심 수치만 정확히 발췌하는 추출기입니다.\n\n"
-     "[절대 규칙]\n"
-     "1. 컨텍스트에 명시된 수치만 발췌하십시오. 추론·보간·반올림 금지.\n"
-     "2. 해당 수치가 컨텍스트에 없으면 반드시 'N/A'로 표기하십시오.\n"
-     "3. 출력은 JSON만 허용. 설명·사족 금지.\n\n"
-     "[핵심 원칙]\n"
-     "질문이 요구하는 지표를 먼저 파악하고, 해당 지표의 연도별 수치를 추출하십시오.\n"
-     "- 질문이 '과의존률/위험군 비율'을 묻는 경우 → 과의존위험군 비율(%) 추출\n"
-     "- 질문이 '이용률/이용 비율'을 묻는 경우 → 해당 서비스 이용률(%) 추출\n"
-     "- 질문이 '이용시간/이용정도'를 묻는 경우 → 이용시간 또는 이용정도 점수 추출\n"
-     "- 질문이 특정 행태(숏폼, SNS, 게임 등)를 묻는 경우 → 해당 행태 관련 수치 추출\n"
-     "- 그 외 → 질문 맥락에서 핵심 지표를 판단하여 추출\n\n"
-     "[출력 형식]\n"
-     "{{\n"
-     '  "추출_지표": "질문에서 파악한 핵심 지표명",\n'
-     '  "연도별_수치": [\n'
-     '    {{"연도": 2020, "전체": "값", "유아동": "값", "청소년": "값", "성인": "값", "60대": "값"}},\n'
-     '    ...\n'
-     "  ]\n"
-     "}}\n\n"
-     "※ 질문이 특정 대상만 묻는 경우(예: 성인만), 해당 대상 필드만 채우고 나머지는 'N/A'로 표기.\n"
-     "※ 컨텍스트에 해당 연도·대상의 수치가 없으면 'N/A'를 기입하십시오."
-    ),
-    ("human",
-     "[추출 대상 질문]\n{resolved_question}\n\n"
-     "[컨텍스트]\n{context}\n\n"
-     "JSON:")
+        ("system",
+         "당신은 통계 보고서에서 핵심 수치만 정확히 발췌하는 추출기입니다.\n\n"
+         "[절대 규칙]\n"
+         "1. 컨텍스트에 명시된 수치만 발췌하십시오. 추론·보간·반올림 금지.\n"
+         "2. 해당 수치가 컨텍스트에 없으면 반드시 'N/A'로 표기하십시오.\n"
+         "3. 출력은 JSON만 허용. 설명·사족 금지.\n\n"
+         "[출력 형식]\n"
+         "{{\n"
+         '  "연도별_수치": [\n'
+         '    {{"연도": 2020, "전체": "XX.X%", "유아동": "XX.X%", "청소년": "XX.X%", "성인": "XX.X%", "60대": "XX.X%"}},\n'
+         '    ...\n'
+         "  ]\n"
+         "}}\n\n"
+         "각 필드에는 '과의존위험군 비율(%)' 수치를 기입하십시오.\n"
+         "컨텍스트에 해당 연도·대상의 수치가 없으면 'N/A'를 기입하십시오."
+        ),
+        ("human",
+         "[추출 대상 질문]\n{resolved_question}\n\n"
+         "[컨텍스트]\n{context}\n\n"
+         "JSON:")
     ])
 
 
@@ -1603,29 +1414,32 @@ True 또는 False만 출력
             years = []
         return years
 
-    def classify_followup_type(user_input: str, context: str) -> str:
-        """후속질문을 standalone 질문으로 재작성."""
+    def rewrite_followup_to_standalone(user_input: str, context: str) -> str:
+        """후속질문을 context 없이도 의미가 완결되는 standalone 질문으로 재작성한다."""
         system_followup_rewrite_prompt = ChatPromptTemplate.from_messages([
             ("system", followup_rewrite_prompt),
             ("human", '{curr}')
         ])
-        followup_answer_chain = system_followup_rewrite_prompt | followup_llm | StrOutputParser()
-        follow_result = followup_answer_chain.invoke({'context': context, "curr": user_input})
-        follow_question = follow_result.strip()
-        return follow_question
+        followup_chain = system_followup_rewrite_prompt | followup_llm | StrOutputParser()
+        result = followup_chain.invoke({'context': context, "curr": user_input})
+        return result.strip()
 
-    def is_personal_memory_question(context: str, curr: str) -> bool:
-        """사용자 개인 정보 기억 관련 질문인지 판정."""
-        system_prompt = ChatPromptTemplate.from_messages([
-            ("system", personal_memory_prompt),
-            ("human", "{curr}")
-        ])
-        chain = system_prompt | router_llm | StrOutputParser()
-        result = (chain.invoke({"context": context, "curr": curr}) or "").strip()
-        m = _True_False_re.search(result)
-        if not m:
-            return False
-        return m.group(1) == "True"
+    def _is_personal_memory_keyword(text: str) -> bool:
+        """키워드 기반 개인기억 질문 판정 (LLM 호출 없이).
+    
+        '내 이름', '제 직업', '누구냐' 등 사용자 개인정보 기억 여부를
+        묻는 질문을 키워드 패턴으로 감지한다.
+        """
+        patterns = [
+            r"(제|내|나|저)\s*(이름|직업|소속|나이|직장)",
+            r"(기억|알고|아|알아).*(나요|하나요|있어|있나)",
+            r"(누구|뭐|무엇).*((라|이라)\s*고\s*(했|말|그랬))",
+            r"(내가|제가)\s*(뭐|무엇|누구|어디)",
+            ]
+        for p in patterns:
+            if re.search(p, text):
+                return True
+        return False
 
     def _norm_label(x: str) -> str:
         if x is None:
@@ -1689,6 +1503,30 @@ True 또는 False만 출력
                     found_years.add(y)
 
         return sorted(found_years)
+    
+    def _extract_years_regex(text: str) -> List[int]:
+        """정규식 기반으로 텍스트에서 연도를 추출한다 (LLM 호출 없이).
+    
+        4자리 연도, 2자리 약칭, 범위 표현(2020~2024) 등을 처리한다.
+        '최근 N년' 등 상대 표현은 플래너 LLM에 위임하므로 여기서는 처리하지 않는다.
+        """
+        available = {2020, 2021, 2022, 2023, 2024}
+        found = set()
+    
+        # 4자리 연도 추출
+        for m in re.finditer(r'(20[2][0-4])\s*년?', text):
+            y = int(m.group(1))
+            if y in available:
+                found.add(y)
+                
+        # 범위 표현 (2020~2024, 2020-2024 등)
+        for m in re.finditer(r'(20[2][0-4])\s*[~\-–]\s*(20[2][0-4])', text):
+            start, end = int(m.group(1)), int(m.group(2))
+            for y in range(min(start, end), max(start, end) + 1):
+                if y in available:
+                    found.add(y)
+    
+        return sorted(found)
 
     def _extract_last_context_hints(chat_history: List[BaseMessage]) -> Dict[str, Any]:
         """chat_history에서 직전 대화의 핵심 힌트를 추출."""
@@ -1770,8 +1608,14 @@ True 또는 False만 출력
     # =========================================================
     
     def route_intent(state: GraphState) -> GraphState:
-        """라우팅 노드 — 의도 분류 + 맥락 처리."""
-        status_callback("🔄 질문 분석 중...")
+        """라우팅 노드 — 의도 분류 + 맥락 처리.
+
+        [성능 개선] LLM 호출을 최소화:
+        - 개인기억 판정: 키워드 기반으로 전환 (LLM 제거)
+        - RAG 오버라이드: 라우터 프롬프트에 통합 (별도 LLM 제거)
+        - chat_reference 판정 + followup 리라이트: 대화 이력이 있을 때만 실행
+        """
+        _status("🔄 질문 분석 중...")
         
         try:
             user_input = state.get("input", "")
@@ -1810,11 +1654,20 @@ True 또는 False만 출력
             # dict_hint 생성
             dict_hint = infer_dict_hint(user_input, context_text=context_text, rag_dict_index=rag_dict_index)
             state["dict_hint"] = dict_hint
+            
+            # [개선] 개인기억 질문을 키워드 기반으로 판정 (LLM 호출 제거)
+            if context_text and _is_personal_memory_keyword(user_input):
+                state['intent_raw'] = "SMALLTALK"
+                state['intent'] = "SMALLTALK"
+                state['is_chat_reference'] = None
+                state['followup_type'] = "smalltalk_full_context"
+                state['resolved_question'] = f"[이전대화]\n{context_text}\n\n[현재질문]\n{user_input}"
+                return state
+            
             allowed = {"SMALLTALK", "META", "RAG", "GENERAL_ADVICE"}
 
             # 라우터 실행
             intent_raw = ""
-            router_output = None
             try:
                 router_chain = router_prompt | router_llm | StrOutputParser()
                 router_output = router_chain.invoke({
@@ -1831,49 +1684,26 @@ True 또는 False만 출력
             else:
                 intent = "RAG"
 
-            # 개인 기억 질문 체크
-            if context_text and is_personal_memory_question(context=context_text, curr=user_input):
-                intent = "SMALLTALK"
 
-            # RAG 오버라이드 판정
-            if intent != "RAG" and context_text:
-                rag_override_prompt = ChatPromptTemplate.from_messages([
-                    ("system",
-                     "질문이 '통계 보고서 데이터'를 필요로 하는지 판단합니다.\n"
-                     "현재 질문이 보고서의 수치/분석/비교를 필요로 하면 YES, 아니면 NO."
-                    ),
-                    ("human",
-                     "[이전 대화]\n{context}\n\n[현재 질문]\n{question}\n\n판정:")
-                ])
-                try:
-                    override_chain = rag_override_prompt | router_llm | StrOutputParser()
-                    override_result = override_chain.invoke({
-                        "context": context_text[-2000:],
-                        "question": user_input,
-                    }).strip().upper()
-                    if "YES" in override_result:
-                        intent = "RAG"
-                except Exception:
-                    pass
+            # [개선] dict_hint에서 RAG 신호가 강하면 오버라이드 (LLM 호출 없이)
+            if intent != "RAG" and dict_hint.get("is_rag_like"):
+                intent = "RAG"
 
             state['intent_raw'] = intent_raw
             state['intent'] = intent
-
+            
             state['is_chat_reference'] = False
             state['followup_type'] = None
             state['resolved_question'] = user_input
 
             if intent == "RAG":
-                is_ref = is_chat_reference_question(context=context_text, curr=user_input)
-                state["is_chat_reference"] = bool(is_ref)
-
-                if is_ref:
-                    state['followup_type'] = "rag_standalone_rewrite"
-                    resolved_q = classify_followup_type(user_input=user_input, context=context_text)
-                    state['resolved_question'] = resolved_q.strip()
-                else:
-                    state['followup_type'] = None
-                    state["resolved_question"] = user_input
+                if context_text:
+                    is_ref = is_chat_reference_question(context=context_text, curr=user_input)
+                    state["is_chat_reference"] = bool(is_ref)
+                    if is_ref:
+                        state['followup_type'] = "rag_standalone_rewrite"
+                        resolved_q = rewrite_followup_to_standalone(user_input=user_input, context=context_text)
+                        state['resolved_question'] = resolved_q.strip()                
             else:
                 state['is_chat_reference'] = None
                 state['followup_type'] = f"{intent.lower()}_full_context"
@@ -1900,7 +1730,7 @@ True 또는 False만 출력
 
     def respond_smalltalk(state: GraphState) -> GraphState:
         """SMALLTALK intent 응답 생성."""
-        status_callback("💬 응답 생성 중...")
+        _status("💬 응답 생성 중...")
         try:
             user_input = state.get("input", "")
             chat_history = state.get('chat_history', [])
@@ -1924,7 +1754,7 @@ True 또는 False만 출력
 
     def respond_meta(state: GraphState) -> GraphState:
         """META intent 응답 생성."""
-        status_callback("ℹ️ 시스템 정보 제공 중...")
+        _status("ℹ️ 시스템 정보 제공 중...")
         try:
             user_input = state.get('input', "")
             chat_history = state.get("chat_history", [])
@@ -1949,7 +1779,7 @@ True 또는 False만 출력
 
     def respond_general_advice(state: GraphState) -> GraphState:
         """GENERAL_ADVICE intent 응답 생성."""
-        status_callback("💡 조언 생성 중...")
+        _status("💡 조언 생성 중...")
         try:
             user_input = state.get('input', "")
             chat_history = state.get("chat_history", [])
@@ -1974,7 +1804,7 @@ True 또는 False만 출력
 
     def plan_search(state: GraphState) -> GraphState:
         """검색 계획을 수립한다."""
-        status_callback("📋 검색 계획 수립 중...")
+        _status("📋 검색 계획 수립 중...")
         try:
             user_input = (state.get("resolved_question") or state.get("input") or "").strip()
             chat_history = state.get("chat_history", [])
@@ -2055,11 +1885,20 @@ True 또는 False만 출력
                 if isinstance(y, int) and y in YEAR_TO_FILENAME
             ])
 
+            # 1순위: LLM 기반 연도 파싱 (다양한 표현 커버)
             input_years = parse_year_range(user_input)
             input_years = sorted([
                 y for y in input_years
                 if isinstance(y, int) and y in YEAR_TO_FILENAME
             ])
+
+            # LLM 실패 시 정규식 폴백
+            if not input_years:
+                input_years = _extract_years_regex(user_input)
+                input_years = sorted([
+                    y for y in input_years
+                    if isinstance(y, int) and y in YEAR_TO_FILENAME
+                ])
 
             if input_years:
                 years = input_years
@@ -2120,8 +1959,8 @@ True 또는 False만 출력
             resolved_q = resolved_q.strip()
 
             # [개선] 연도별 쿼리 보장
-            base_query_clean = re.sub(r'20[2][0-4]년(?:과|의|에|도|은|이|를|부터|까지)?\s*', '', resolved_q).strip()
-            base_query_clean = re.sub(r'20[2][0-4]~?20[2][0-4]년(?:의|에|도|은|이|를)?\s*', '', base_query_clean).strip()
+            base_query_clean = re.sub(r'20[2][0-4]년?\s*', '', resolved_q).strip()
+            base_query_clean = re.sub(r'20[2][0-4]~?20[2][0-4]년?\s*', '', base_query_clean).strip()
             
             for y in years:
                 year_query = f"{y}년 {base_query_clean}"
@@ -2179,7 +2018,7 @@ True 또는 False만 출력
         """
         [개선] 검색 쿼리를 LLM으로 최적화한다 - 연도별 균등 분배.
         """
-        status_callback("🔧 쿼리 최적화 중...")
+        _status("🔧 쿼리 최적화 중...")
         try:
             plan = state["plan"]
             queries = plan.get("queries", [])
@@ -2188,51 +2027,20 @@ True 또는 False만 출력
             dict_hint = state.get("dict_hint") or {}
 
             # [개선] 연도별 쿼리 추가 (멀티연도 시)
-            base_query_clean = re.sub(r'20[2][0-4]년(?:과|의|에|도|은|이|를|부터|까지)?\s*', '', resolved_q).strip()
-            base_query_clean = re.sub(r'20[2][0-4]~?20[2][0-4]년(?:의|에|도|은|이|를)?\s*', '', base_query_clean).strip()
-
+            base_query_clean = re.sub(r'20[2][0-4]년?\s*', '', resolved_q).strip()
+            base_query_clean = re.sub(r'20[2][0-4]~?20[2][0-4]년?\s*', '', base_query_clean).strip()
+            
             if len(years) > 1:
                 for y in years:
                     year_query = f"{y}년 {base_query_clean}"
                     if year_query not in queries:
                         queries.append(year_query)
-            # [개선] dict_hint에서 정보 추출하여 프롬프트에 전달
-            target_group = dict_hint.get("target_group", "") or ""
-            anchor_terms = dict_hint.get("anchor_terms", []) or []
-            avoid_terms = dict_hint.get("avoid_terms", []) or []
-            
-            # anchor_terms와 avoid_terms를 문자열로 변환
-            anchor_str = ", ".join(anchor_terms) if anchor_terms else "없음"
-            avoid_str = ", ".join(avoid_terms) if avoid_terms else "없음"
-            target_str = target_group if target_group else "전체"
-
-            # LLM 기반 최적화 수행 - dict_hint 정보 포함
-            result = (_rewrite_prompt_25 | rewrite_llm | StrOutputParser()).invoke({
-                "resolved_question": resolved_q,
-                "years": str(years),
-                "target_group": target_str,      # [신규] 대상 그룹
-                "anchor_terms": anchor_str,       # [신규] 핵심 키워드
-                "avoid_terms": avoid_str,         # [신규] 제외 키워드
-                })
-
-
-            # LLM 기반 최적화 수행
-            result = (_rewrite_prompt_25 | rewrite_llm | StrOutputParser()).invoke({
-                "resolved_question": resolved_q,
-                "queries": str(queries),
-                "years": str(years),
-            })
-
-            json_match = re.search(r'\{[\s\S]*\}', result)
-            if json_match:
-                result = json_match.group()
-
-            optimized = json.loads(result)
-            rewritten = optimized.get("optimized_queries", queries)
-
-            if not isinstance(rewritten, list) or not rewritten:
+                        
+            rewritten = [_optimize_query_rule_based(q) for q in queries]
+            rewritten = [q for q in rewritten if q.strip()]
+            if not rewritten:
                 rewritten = queries
-
+            
             unique_queries = list(dict.fromkeys(rewritten))
 
             # [개선] 연도별 쿼리 분포 확인 및 보완
@@ -2245,38 +2053,20 @@ True 또는 False만 출력
                         break
             
             # 부족한 연도에 쿼리 추가
-            MAX_BASE_QUERY_LEN = 30
-
-            if len(base_query_clean) > MAX_BASE_QUERY_LEN:
-                # 핵심 키워드 추출 (dict_hint 기반)
-                keywords = extract_keywords_from_dict(resolved_q, rag_dict_index, dict_hint)
-                # anchor_terms 우선 사용
-                if anchor_terms:
-                    short_base = " ".join(anchor_terms[:3])
-                elif keywords:
-                    short_base = " ".join(keywords[:3])
-                else:
-                    # 최후의 수단: base_query_clean에서 앞 30자만
-                    short_base = base_query_clean[:MAX_BASE_QUERY_LEN].rsplit(' ', 1)[0]
-            else:
-                short_base = base_query_clean
-
             for y in years:
                 deficit = MIN_QUERIES_PER_YEAR - year_query_count[y]
-                # [개선] 이미 1개 이상 있으면 추가 보완 최소화
-                if year_query_count[y] >= 1:
-                    deficit = min(deficit, 1)  # 최대 1개만 추가
-    
                 for i in range(deficit):
                     if i == 0:
-                        new_query = f"{y}년 {short_base}"
+                        new_query = f"{y}년 {base_query_clean}"
                     else:
+                        # RAG Dictionary 기반 키워드 활용
                         keywords = extract_keywords_from_dict(resolved_q, rag_dict_index, dict_hint)
                         kw_str = " ".join(keywords[:2])
                         new_query = f"{y}년 {kw_str}"
-        
+                    
                     if new_query not in unique_queries:
                         unique_queries.append(new_query)
+
             # 앵커 용어로 쿼리 보강
             anchors = dict_hint.get("anchor_terms", [])
             if anchors:
@@ -2311,7 +2101,7 @@ True 또는 False만 출력
         """
         retry_count = state.get("retry_count", 0)
         retry_info = f" (재시도 #{retry_count})" if retry_count > 0 else ""
-        status_callback(f"🔍 보고서 검색 중...{retry_info}")
+        _status(f"🔍 보고서 검색 중...{retry_info}")
 
         try:
             plan = state["plan"]
@@ -2416,22 +2206,53 @@ True 또는 False만 출력
                 all_docs.extend(docs)
 
             expanded_chunks = []
-            for pid in parent_ids:
+            BATCH_SIZE = 20  # ChromaDB where $in 제한 고려
+            for i in range(0, len(parent_ids), BATCH_SIZE):
+                batch_pids = parent_ids[i:i + BATCH_SIZE]
                 try:
                     got = vectorstore._collection.get(
-                        where={'parent_id': pid},
+                        where={
+                            '$and': [
+                                {'parent_id': {'$in': batch_pids}},
+                                {'doc_type': 'text_chunk'}
+                                ]
+                            },
                         include=['documents', 'metadatas']
-                    )
-                    chunks = []
+                        )
+        
+                    # parent_id별로 그룹화
+                    pid_chunks: Dict[str, list] = {}
                     for txt, meta in zip(got.get("documents", []), got.get("metadatas", [])):
-                        if isinstance(meta, dict) and meta.get("doc_type") == "text_chunk":
-                            chunks.append((int(meta.get("chunk_index", 0)), txt or "", meta))
-
-                    chunks.sort(key=lambda x: x[0])
-                    for _, txt, meta in chunks[:MAX_CHUNKS_PER_PARENT]:
-                        expanded_chunks.append(Document(page_content=txt, metadata=meta))
+                        if not isinstance(meta, dict):
+                            continue
+                        pid = meta.get("parent_id", "")
+                        if pid not in pid_chunks:
+                            pid_chunks[pid] = []
+                        pid_chunks[pid].append((int(meta.get("chunk_index", 0)), txt or "", meta))
+        
+                    # 각 parent_id별로 정렬 후 상위 N개만 추가
+                    for pid in batch_pids:
+                        chunks = pid_chunks.get(pid, [])
+                        chunks.sort(key=lambda x: x[0])
+                        for _, txt, meta in chunks[:MAX_CHUNKS_PER_PARENT]:
+                            expanded_chunks.append(Document(page_content=txt, metadata=meta))
                 except Exception:
-                    pass
+                    # 배치 실패 시 개별 폴백
+                    for pid in batch_pids:
+                        try:
+                            got = vectorstore._collection.get(
+                                where={'parent_id': pid},
+                                include=['documents', 'metadatas']
+                                )
+                            chunks = []
+                            for txt, meta in zip(got.get("documents", []), got.get("metadatas", [])):
+                                if isinstance(meta, dict) and meta.get("doc_type") == "text_chunk":
+                                    chunks.append((int(meta.get("chunk_index", 0)), txt or "", meta))
+                            chunks.sort(key=lambda x: x[0])
+                            for _, txt, meta in chunks[:MAX_CHUNKS_PER_PARENT]:
+                                expanded_chunks.append(Document(page_content=txt, metadata=meta))
+                        except Exception:
+                            pass
 
             pid_set = set(parent_ids)
             kept_summaries = [d for d in all_docs if d.metadata.get("parent_id") in pid_set]
@@ -2477,7 +2298,7 @@ True 또는 False만 출력
         """
         [개선] 검색 결과를 리랭킹하고 압축한다 - 연도별 균등 배치.
         """
-        status_callback("📊 결과 정렬 및 압축 중...")
+        _status("📊 결과 정렬 및 압축 중...")
         try:
             docs = state.get("retrieval", {}).get("docs", [])
             query = state.get("resolved_question", "")
@@ -2546,14 +2367,6 @@ True 또는 False만 출력
 
             compressed_docs = compressed_docs[:20]
 
-            # [신규] 유사 내용 탐색
-            similar_info = find_similar_available_content(query, context_text, rag_dict_index)
-            if similar_info.get("has_similar"):
-                state["similar_content_info"] = similar_info
-                state.setdefault("debug_info", {})
-                state["debug_info"]["similar_content"] = similar_info
-
-
             blocks = []
             for i, d in enumerate(compressed_docs, start=1):
                 m = d.metadata
@@ -2582,7 +2395,7 @@ True 또는 False만 출력
         plan = state.get("plan") or {}
         years = plan.get("years", [])
 
-        if len(years) <= 1:
+        if len(years) <= 2:
             return state
 
         context = (state.get("compressed_context") or state.get("context", ""))
@@ -2591,7 +2404,7 @@ True 또는 False만 출력
         if not context.strip():
             return state
 
-        status_callback("📈 핵심 수치 추출 중...")
+        _status("📈 핵심 수치 추출 중...")
         try:
             years_str = ", ".join([str(y) for y in years if str(y).strip()])
             resolved_q_for_extract = f"{resolved_q}\n[요청 연도] {years_str}".strip()
@@ -2643,23 +2456,17 @@ True 또는 False만 출력
                     missing_years.append(yy)
 
             # [개선] 누락 연도가 있으면 타겟 재검색 수행
-            year_parent_dist = state.get("retrieval", {}).get("year_distribution", {})
-            actually_missing = [
-                y for y in missing_years 
-                if year_parent_dist.get(y, 0) < MIN_PARENTS_PER_YEAR
-                ]
-
-            if actually_missing and len(actually_missing) < len(years):
-                status_callback(f"🔄 누락 연도 {actually_missing} 추가 검색 중...")
-    
+            if missing_years and len(missing_years) < len(years):
+                _status(f"🔄 누락 연도 {missing_years} 추가 검색 중...")
+                
                 dict_hint = state.get("dict_hint") or {}
                 supplemental_context = targeted_year_search(
-                    actually_missing,  # missing_years → actually_missing
+                    missing_years, 
                     resolved_q,
                     vectorstore,
                     rag_dict_index,
                     dict_hint
-                    )
+                )
                 
                 if supplemental_context:
                     # 보완 컨텍스트로 재추출 시도
@@ -2716,7 +2523,7 @@ True 또는 False만 출력
 
     def context_sanitize(state: GraphState) -> GraphState:
         """컨텍스트에서 프롬프트 인젝션 패턴을 제거한다."""
-        status_callback("🛡️ 컨텍스트 검증 중...")
+        _status("🛡️ 컨텍스트 검증 중...")
         try:
             base_context = state.get("compressed_context") or state.get("context", "")
 
@@ -2750,7 +2557,7 @@ True 또는 False만 출력
         """LLM을 사용하여 최종 답변을 생성한다."""
         retry_count = state.get("retry_count", 0)
         retry_info = f" (재생성 #{retry_count})" if retry_count > 0 and state.get("retry_type") == "generate" else ""
-        status_callback(f"✍️ 답변 생성 중...{retry_info}")
+        _status(f"✍️ 답변 생성 중...{retry_info}")
 
         try:
             context = state.get("sanitized_context") or state.get("compressed_context") or state.get("context", "")
@@ -2787,7 +2594,7 @@ True 또는 False만 출력
 
     def safety_check(state: GraphState) -> GraphState:
         """답변에 민감한 패턴이 있는지 검사한다."""
-        status_callback("🔒 안전성 검사 중...")
+        _status("🔒 안전성 검사 중...")
         try:
             answer = state.get("draft_answer", "")
             issues = []
@@ -2812,7 +2619,7 @@ True 또는 False만 출력
 
     def validate_answer(state: GraphState) -> GraphState:
         """LLM으로 답변 품질을 검증한다."""
-        status_callback("✅ 답변 검증 중...")
+        _status("✅ 답변 검증 중...")
         try:
             retry_count = state.get("retry_count", 0)
 
@@ -2887,7 +2694,7 @@ True 또는 False만 출력
 
     def handle_clarify(state: GraphState) -> GraphState:
         """질문 명확화가 필요할 때 추가 질문을 생성한다."""
-        status_callback("❓ 명확화 질문 생성 중...")
+        _status("❓ 명확화 질문 생성 중...")
         try:
             clarify_question = state.get("pending_clarification", "")
             if not clarify_question:
@@ -2910,7 +2717,7 @@ True 또는 False만 출력
 
     def retrieve_retry(state: GraphState) -> GraphState:
         """검색 재시도 시 쿼리를 확장한다."""
-        status_callback("🔄 검색 재시도 준비 중...")
+        _status("🔄 검색 재시도 준비 중...")
         state["retry_count"] = (state.get("retry_count") or 0) + 1
         state["retry_type"] = "retrieve"
 
@@ -2929,7 +2736,7 @@ True 또는 False만 출력
 
         # 연도별 쿼리 추가
         years = state["plan"].get("years", [])
-        base_query_clean = re.sub(r'20[2][0-4]년(?:과|의|에|도|은|이|를|부터|까지)?\s*', '', resolved_q).strip()
+        base_query_clean = re.sub(r'20[2][0-4]년?\s*', '', resolved_q).strip()
         for y in years:
             year_query = f"{y}년 {base_query_clean}"
             if year_query not in expanded_queries:
@@ -2941,7 +2748,7 @@ True 또는 False만 출력
 
     def generate_retry(state: GraphState) -> GraphState:
         """답변 재생성 시 카운터를 증가시킨다."""
-        status_callback("🔄 답변 재생성 준비 중...")
+        _status("🔄 답변 재생성 준비 중...")
         state["retry_count"] = (state.get("retry_count") or 0) + 1
         state["retry_type"] = "generate"
         return state
@@ -2964,6 +2771,7 @@ True 또는 False만 출력
         "clarify": handle_clarify,
         "retrieve_retry": retrieve_retry,
         "generate_retry": generate_retry,
+        "_status_callback_ref": _callback_ref,
     }
 
 
@@ -2984,6 +2792,8 @@ def build_graph(node_functions):
 
     # 노드 등록
     for name, func in node_functions.items():
+        if name.startswith("_"):  # _status_callback_ref 등 내부용 키 제외
+            continue
         workflow.add_node(name, func)
 
     # 라우팅 함수
@@ -3065,5 +2875,4 @@ def build_graph(node_functions):
 
     memory = MemorySaver()
     return workflow.compile(checkpointer=memory)
-
 
