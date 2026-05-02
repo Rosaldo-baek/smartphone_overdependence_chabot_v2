@@ -634,10 +634,10 @@ def main():
                         # 추가 검색 트리거 여부
                         if ef.get("supplemental_search_triggered"):
                             st.warning("**⚡ 추가 검색 트리거됨**")
-                            if ef.get("supplemental_search_reason"):
+                        if ef.get("supplemental_search_reason"):
                                 st.json(ef["supplemental_search_reason"])
                                 
-                                # Missing 이유
+                            # Missing 이유
                                 if debug_info.get("missing_years_reason"):
                                     st.write("**Missing 판정 이유:**")
                                     for year, reason in debug_info["missing_years_reason"].items():
