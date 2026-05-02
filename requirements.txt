@@ -15,7 +15,6 @@ langgraph-checkpoint==2.1.1
 chromadb==1.4.0
  
 # --- OpenAI ---
-openai==2.8.1
 tiktoken==0.9.0
  
 # --- Hugging Face (ChromaDB 다운로드용) ---
