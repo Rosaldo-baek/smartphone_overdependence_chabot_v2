@@ -1900,6 +1900,16 @@ curr: {curr}
                     if isinstance(y, int) and y in YEAR_TO_FILENAME
                 ])
 
+            # resolved_question에서도 연도 추출하여 병합
+            # (리라이트 과정에서 "최근"→"2024년"으로 변환된 경우 보완)
+            resolved_q_years = _extract_years_regex(
+                state.get("resolved_question") or ""
+                )
+            for y in resolved_q_years:
+                if y in YEAR_TO_FILENAME and y not in input_years:
+                    input_years.append(y)
+            input_years = sorted(input_years)
+
             if input_years:
                 years = input_years
                 year_source = "parse_year_range"
