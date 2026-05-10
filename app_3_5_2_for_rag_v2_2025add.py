@@ -200,12 +200,21 @@ def download_chroma_db():
     
     try:
         from huggingface_hub import snapshot_download
+        import stat
+        
         downloaded_path = snapshot_download(
             repo_id=HF_REPO_ID,
             repo_type="dataset",
             local_dir=LOCAL_DB_PATH,
             local_dir_use_symlinks=False
         )
+        
+        # 다운로드된 파일에 쓰기 권한 부여 (readonly DB 오류 방지)
+        for root, dirs, files in os.walk(downloaded_path):
+            for f in files:
+                fp = os.path.join(root, f)
+                os.chmod(fp, stat.S_IREAD | stat.S_IWRITE)
+        
         return downloaded_path, None
     except Exception as e:
         return None, str(e)
