@@ -25,7 +25,7 @@ if SCRIPT_DIR not in sys.path:
 # =========================================================
 # LangGraph 모듈 import
 # =========================================================
-from smart_langgraph_for_3_5_2_v3 import (
+from smart_langgraph_for_3_5_2_v3_2025add import (
     # 상수
     YEAR_TO_FILENAME,
     BOT_IDENTITY,
@@ -369,7 +369,7 @@ guide_html = """
   <div class="guide-title">📌 사용 안내</div>
 
   <div class="guide-item">
-    <strong>용도:</strong> 스마트폰 과의존 실태조사 보고서(2020~2024) <strong>정보 검색용</strong>입니다. <br />
+    <strong>용도:</strong> 스마트폰 과의존 실태조사 보고서(2020~2025) <strong>정보 검색용</strong>입니다. <br />
     인사이트 제공, 일반 대화, 보고서 외 정보 검색에는 적합하지 않습니다.
   </div>
 
@@ -377,8 +377,8 @@ guide_html = """
     <strong>검색 팁:</strong> 아래 3가지 요소를 포함하면 정확도가 높아집니다.<br />
     <br />
     <strong>① 연도</strong><br />
-    • 2020~2024 중 선택 (미입력 시 2023~2024 적용)<br />
-    • 💡 “최근 N년”은 기준연도 계산 후 2020~2024 밖 연도는 제외되어 범위가 좁아질 수 있어 숫자 연도 권장<br />
+    • 2020~2025 중 선택 (미입력 시 2024~2025 적용)<br />
+    • 💡 “최근 N년”은 기준연도 계산 후 2020~2025 밖 연도는 제외되어 범위가 좁아질 수 있어 숫자 연도 권장<br />
     <br />
     <strong>② 대상</strong><br />
     • 유아동(만3~9, 보호자응답) / 청소년(10~19) / 성인(20~59) / 60대(60~69, 고령층·시니어)<br />
@@ -488,7 +488,7 @@ def main():
                 st.markdown(message["content"])
 
     # 사용자 입력
-    if prompt := st.chat_input("질문을 입력하세요... (예: 2024년 청소년 과의존률은?)"):
+    if prompt := st.chat_input("질문을 입력하세요... (예: 2025년 청소년 과의존률은?)"):
         # 사용자 메시지 추가
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
