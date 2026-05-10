@@ -1,3 +1,10 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Sun May 10 09:58:43 2026
+
+@author: USER
+"""
+
 
 
 from __future__ import annotations
@@ -30,6 +37,7 @@ YEAR_TO_FILENAME = {
     2022: "2022년_스마트폰_과의존_실태조사_보고서.pdf",
     2023: "2023년_스마트폰_과의존실태조사_최종보고서.pdf",
     2024: "2024_스마트폰_과의존_실태조사_본_보고서.pdf",
+    2025: "2025년_스마트폰_과의존_실태조사_본보고서.pdf"
 }
 ALLOWED_FILES = list(YEAR_TO_FILENAME.values())
 
@@ -57,7 +65,7 @@ MAX_CHARS_PER_DOC = 20000
 SUMMARY_TYPES = ['page_summary', 'table_summary']
 MAX_RETRY_COUNT = 1
 
-BOT_IDENTITY = """**2020~2024년 스마트폰 과의존 실태조사 보고서 분석 시스템**
+BOT_IDENTITY = """**2020~2025년 스마트폰 과의존 실태조사 보고서 분석 시스템**
 
 **제공 가능한 정보:**
 - 연도별 스마트폰 과의존 위험군 비율 및 추이
@@ -468,9 +476,9 @@ def generate_year_specific_queries(
     # 1. 기존 쿼리에서 연도 교체
     for q in base_queries:
         # 기존 연도 패턴 제거
-        clean_q = re.sub(r'20[2][0-4]년?\s*', '', q).strip()
-        clean_q = re.sub(r'20[2][0-4]~?20[2][0-4]년?\s*', '', clean_q).strip()
-        clean_q = re.sub(r'20[2][0-4][-~]20[2][0-4]년?\s*', '', clean_q).strip()
+        clean_q = re.sub(r'20[2][0-5]년?\s*', '', q).strip()
+        clean_q = re.sub(r'20[2][0-5]~?20[2][0-5]년?\s*', '', clean_q).strip()
+        clean_q = re.sub(r'20[2][0-5][-~]20[2][0-5]년?\s*', '', clean_q).strip()
         
         if clean_q:
             year_query = f"{year_str} {clean_q}"
@@ -946,7 +954,7 @@ True 또는 False만 출력하세요.
 - 출력은 반드시 아래 정규식과 '완전히 동일'해야 합니다(문자열 전체 매칭).
   ^{{"years":\\[(?:\\d{{4}}(?:,\\d{{4}})*)?\\]\\}}$
 - 즉, 출력은 아래 예시처럼 JSON 1개만 허용됩니다.
-  {{"years":[2022,2023,2024]}}
+  {{"years":[2022,2023,2024,2025]}}
   {{"years":[]}}
 - 금지: 공백, 개행, 탭, 설명 문장, 따옴표 추가, 코드블록, 마크다운, 다른 키 추가, 숫자 외 토큰
 - years 배열은 반드시 오름차순 정렬이어야 한다.
@@ -956,10 +964,10 @@ True 또는 False만 출력하세요.
 
 1) 연도 후보 정규화 규칙(연도값만 산출)
 - 4자리 연도 표현을 인식:
-  - 2020, 2021, 2022, 2023, 2024 등(AVAILABLE_YEARS 범위 내)
+  - 2020, 2021, 2022, 2023, 2024, 2025 등(AVAILABLE_YEARS 범위 내)
   - 한글 접미/공백/구두점 포함: "2024년", "2024 년", "2024년도", "(2024)", "2024.", "2024)"
   - 2자리 연도 표현(예: '24, '24, 24년, 24년도, FY24)도 정상 형태 (4글자) 형태로 변환함
-  - 혼합 범위 표현(예: 2022-24, 2022~'24):
+  - 혼합 범위 표현(예: 2022-25, 2022~'25):
   - 왼쪽이 4자리면 오른쪽 2자리는 동일 세기(20xx)로 해석
   - 정규화 결과가 AVAILABLE_YEARS에 없으면 즉시 폐기
 
@@ -996,18 +1004,18 @@ C) 상대 범위 패턴(연속 연도 생성)
   - ★ 제거 후 남은 연도가 N개 미만이어도 임의로 추가 연도를 보충하지 않는다
 
 [상대 범위 계산 예시 — 반드시 참고]
-- BASE_YEAR=2026, AVAILABLE_YEARS=[2020,2021,2022,2023,2024] 일 때:
+- BASE_YEAR=2026, AVAILABLE_YEARS=[2020,2021,2022,2023,2024, 2025] 일 때:
   - "최근 3년" / "최근 3개년" / "지난 3년" / "3년간"
     → start=2026-(3-1)=2024, end=2026
     → 생성: [2024, 2025, 2026]
-    → AVAILABLE 필터 후: [2024]
-    → 최종 출력: {{"years":[2024]}}
+    → AVAILABLE 필터 후: [2024,2025]
+    → 최종 출력: {{"years":[2024,2025]}}
 
   - "최근 5년" / "최근 5개년"
     → start=2026-(5-1)=2022, end=2026
     → 생성: [2022, 2023, 2024, 2025, 2026]
-    → AVAILABLE 필터 후: [2022, 2023, 2024]
-    → 최종 출력: {{"years":[2022,2023,2024]}}
+    → AVAILABLE 필터 후: [2022, 2023, 2024, 2025]
+    → 최종 출력: {{"years":[2022,2023,2024, 2025]}}
 
 [절대 금지]
 - "최근 N개년"을 "AVAILABLE_YEARS에서 최신 N개를 선택"으로 해석하지 않는다.
@@ -1105,11 +1113,11 @@ curr: {curr}
     router_prompt = ChatPromptTemplate.from_messages([
         ("system",
          "사용자 질문을 분류하는 라우터입니다.\n"
-         "이 시스템은 '스마트폰 과의존 실태조사 보고서(2020~2024)' 전문 RAG를 포함합니다.\n\n"
+         "이 시스템은 '스마트폰 과의존 실태조사 보고서(2020~2025)' 전문 RAG를 포함합니다.\n\n"
          "[LABELS]\n"
          "SMALLTALK: 인사/감사/잡담/일상대화/사용자 개인정보 참조(이름, 나이, 직업 등)\n"
          "META: 시스템/모델/프롬프트/구성/데이터 범위/사용법 질문\n"
-         "RAG: 보고서(2020~2024) 내용 기반 질문(조사개요, 결과, 수치, 정의, 조사방법, 연도별 추이/비교 등)\n"
+         "RAG: 보고서(2020~2025) 내용 기반 질문(조사개요, 결과, 수치, 정의, 조사방법, 연도별 추이/비교 등)\n"
          "GENERAL_ADVICE: 과의존 줄이는 방법/대처법/상담/행동요령 등 일반 조언 요청\n\n"
          "[OUTPUT RULE]\n"
          "- 반드시 라벨명 1개만 출력: SMALLTALK 또는 META 또는 RAG 또는 GENERAL_ADVICE\n"
@@ -1138,7 +1146,7 @@ curr: {curr}
          "Q: 너는 어떤 자료를 기반으로 답해?\nA: META\n\n"
          "Q: 이 라우터는 어떤 기준으로 분류해?\nA: META\n\n"
          "Q: 2022년 청소년 과의존률이 얼마야?\nA: RAG\n\n"
-         "Q: 2020~2024년 과의존률 추이 요약해줘\nA: RAG\n\n"
+         "Q: 2020~2025년 과의존률 추이 요약해줘\nA: RAG\n\n"
          "Q: 보고서에서 과의존 정의/판정 기준이 뭐야?\nA: RAG\n\n"
          "Q: 표본 수랑 조사 방법(조사설계) 알려줘\nA: RAG\n\n"
          "Q: 스마트폰 과의존을 줄이는 실천 방법 5가지만 추천해줘\nA: GENERAL_ADVICE\n\n"
@@ -1178,7 +1186,7 @@ curr: {curr}
 [REDIRECT RULE]
 - 사용자가 분석/수치/연도/지표를 묻거나 업무용 요청이면:
   1) "이건 스몰토크 범위가 아닙니다" 1문장
-  2) 연도(2020~2024 중)와 주제(예: 청소년/성인, 위험군, 사용시간, 영향 등) 중 하나만 짧게 되묻기(질문 1개)
+  2) 연도(2020~2025 중)와 주제(예: 청소년/성인, 위험군, 사용시간, 영향 등) 중 하나만 짧게 되묻기(질문 1개)
 
 [SAFETY]
 - 자해/자살/폭력/학대 등 위기 신호가 보이면:
@@ -1242,11 +1250,11 @@ curr: {curr}
 
     # 플래너 프롬프트
     planner_prompt_text = (
-        "스마트폰 과의존 실태조사 보고서(2020~2024년) 검색 계획 수립기입니다.\n"
+        "스마트폰 과의존 실태조사 보고서(2020~2025년) 검색 계획 수립기입니다.\n"
         "반드시 유효한 JSON만 출력하세요.\n\n"
         "[연도/파일 기본 규칙]"
         "- 연도를 임의로 확장하거나 임의로 일부 연도만 선택하지 않는다."
-        "- 별도 연도 지정이 없다면 기본 연도(2023, 2024)를 적용한다 "
+        "- 별도 연도 지정이 없다면 기본 연도(2025, 2024)를 적용한다 "
         "후속질문 유형별 처리:\n"
         "- followup_type='none': 이전 맥락 무시\n"
         "- followup_type='target_change': 이전 주제 유지 + 새 대상\n"
@@ -1296,7 +1304,7 @@ curr: {curr}
     # 답변 생성 프롬프트
     _answer_prompt_25 = ChatPromptTemplate.from_messages([
     ("system",
-     "스마트폰 과의존 실태조사 보고서(2020~2024) 분석 시스템입니다.\n"
+     "스마트폰 과의존 실태조사 보고서(2020~2025) 분석 시스템입니다.\n"
      "당신은 보고서 원문을 벡터 검색하여 관련 페이지를 자동으로 찾아 답변합니다.\n"
      "사용자에게 '자료를 제공해 달라'거나 '원문을 업로드해 달라'고 요청하지 마십시오.\n\n"
      "원칙:\n"
@@ -1394,7 +1402,7 @@ curr: {curr}
 
     def parse_year_range(user_input: str) -> List[int]:
         """사용자 입력 텍스트에서 연도/연도범위를 추출."""
-        available_years = [2020, 2021, 2022, 2023, 2024]
+        available_years = [2020, 2021, 2022, 2023, 2024, 2025]
         system_parse_year_prompt = ChatPromptTemplate.from_messages([
             ("system", parse_year_prompt_text),
             ("human", '{text}')
@@ -1488,7 +1496,7 @@ curr: {curr}
     def _extract_years_from_chat_history(chat_history: List[BaseMessage], available_years: List[int] = None) -> List[int]:
         """chat_history에서 연도 패턴을 추출."""
         if available_years is None:
-            available_years = [2020, 2021, 2022, 2023, 2024]
+            available_years = [2020, 2021, 2022, 2023, 2024, 2025]
 
         year_pattern = re.compile(r'(20[12]\d)')
         found_years = set()
@@ -1510,17 +1518,17 @@ curr: {curr}
         4자리 연도, 2자리 약칭, 범위 표현(2020~2024) 등을 처리한다.
         '최근 N년' 등 상대 표현은 플래너 LLM에 위임하므로 여기서는 처리하지 않는다.
         """
-        available = {2020, 2021, 2022, 2023, 2024}
+        available = {2020, 2021, 2022, 2023, 2024, 2025}
         found = set()
     
         # 4자리 연도 추출
-        for m in re.finditer(r'(20[2][0-4])\s*년?', text):
+        for m in re.finditer(r'(20[2][0-5])\s*년?', text):
             y = int(m.group(1))
             if y in available:
                 found.add(y)
                 
-        # 범위 표현 (2020~2024, 2020-2024 등)
-        for m in re.finditer(r'(20[2][0-4])\s*[~\-–]\s*(20[2][0-4])', text):
+        # 범위 표현 (2020~2025, 2020-2025 등)
+        for m in re.finditer(r'(20[2][0-5])\s*[~\-–]\s*(20[2][0-5])', text):
             start, end = int(m.group(1)), int(m.group(2))
             for y in range(min(start, end), max(start, end) + 1):
                 if y in available:
@@ -1578,13 +1586,13 @@ curr: {curr}
 
     def _append_year_confirmation(answer: str, state: dict) -> str:
         """연도 미지정 시 기본 연도 사용 안내 메시지를 추가."""
-        years = state.get("plan", {}).get("years", [2023, 2024])
+        years = state.get("plan", {}).get("years", [2025, 2024])
         year_str = ", ".join([f"{y}년" for y in years])
         confirmation_msg = (
             f"\n\n---\n"
             f"📌 **연도 확인 요청**: 질문에 특정 연도가 명시되지 않아 "
             f"**최근 데이터({year_str})**를 기준으로 답변드렸습니다. "
-            f"다른 연도(2020~2024년)의 정보가 필요하시면 말씀해 주세요."
+            f"다른 연도(2020~2025년)의 정보가 필요하시면 말씀해 주세요."
         )
         return answer + confirmation_msg
 
@@ -1948,7 +1956,7 @@ curr: {curr}
             # years가 없으면 디폴트 지정
             used_default_years = False
             if not years:
-                years = [2023, 2024]
+                years = [2025, 2024]
                 used_default_years = True
             state["used_default_years"] = used_default_years
 
@@ -1969,8 +1977,8 @@ curr: {curr}
             resolved_q = resolved_q.strip()
 
             # [개선] 연도별 쿼리 보장
-            base_query_clean = re.sub(r'20[2][0-4]년?\s*', '', resolved_q).strip()
-            base_query_clean = re.sub(r'20[2][0-4]~?20[2][0-4]년?\s*', '', base_query_clean).strip()
+            base_query_clean = re.sub(r'20[2][0-5]년?\s*', '', resolved_q).strip()
+            base_query_clean = re.sub(r'20[2][0-5]~?20[2][0-5]년?\s*', '', base_query_clean).strip()
             
             for y in years:
                 year_query = f"{y}년 {base_query_clean}"
@@ -2015,7 +2023,7 @@ curr: {curr}
             fns = [YEAR_TO_FILENAME[y] for y in years if y in YEAR_TO_FILENAME]
 
             state["plan"] = {
-                "years": years if years else [2023, 2024],
+                "years": years if years else [2025, 2024],
                 "file_name_filters": fns,
                 "queries": [user_input] * 3,
                 "resolved_question": user_input,
@@ -2037,8 +2045,8 @@ curr: {curr}
             dict_hint = state.get("dict_hint") or {}
 
             # [개선] 연도별 쿼리 추가 (멀티연도 시)
-            base_query_clean = re.sub(r'20[2][0-4]년?\s*', '', resolved_q).strip()
-            base_query_clean = re.sub(r'20[2][0-4]~?20[2][0-4]년?\s*', '', base_query_clean).strip()
+            base_query_clean = re.sub(r'20[2][0-5]년?\s*', '', resolved_q).strip()
+            base_query_clean = re.sub(r'20[2][0-5]~?20[2][0-5]년?\s*', '', base_query_clean).strip()
             
             if len(years) > 1:
                 for y in years:
@@ -2746,7 +2754,7 @@ curr: {curr}
 
         # 연도별 쿼리 추가
         years = state["plan"].get("years", [])
-        base_query_clean = re.sub(r'20[2][0-4]년?\s*', '', resolved_q).strip()
+        base_query_clean = re.sub(r'20[2][0-5]년?\s*', '', resolved_q).strip()
         for y in years:
             year_query = f"{y}년 {base_query_clean}"
             if year_query not in expanded_queries:
@@ -2885,4 +2893,5 @@ def build_graph(node_functions):
 
     memory = MemorySaver()
     return workflow.compile(checkpointer=memory)
+
 
